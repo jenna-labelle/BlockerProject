@@ -1,0 +1,567 @@
+---
+title: "Repeating analysis with Mature only"
+output: html_notebook
+---
+libraries
+```{r}
+suppressPackageStartupMessages(library(metaseqR))
+suppressPackageStartupMessages(library(reshape2))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(tidyr))
+```
+
+All DESeq2 analyses will be run in "DESeq2Analyses_Pairwise". Other analyses that use raw counts, not a deseq2 object, will be run here- same code as older files (BlockersDecrease, PotentialOfftargets, Improvements), but using MATURE counts as input instead of MATURE + ISOMIRS
+
+Read in data. Select just Mature.
+
+```{r}
+wd<- "//Cifs2/rcdata$/Channing_miRNA_Blocker_Test/"
+countsInput<- read.delim(paste(wd, "TGC_Data/mirna-blocker_bs_mature-isomirs_raw.txt", sep =""))
+
+#reformat counts data
+counts<- countsInput
+rownames(counts)<- counts$ID
+counts<- counts[,c(4:(ncol(counts)))]
+
+#Select just mature miRNAs. let7 needs to be searched for separately
+MatureCounts<- counts[grep("R", rownames(counts)),]
+let7<- counts[grep("let", rownames(counts)),]
+MatureCounts<- rbind(MatureCounts, let7)
+counts<- MatureCounts
+```
+
+
+#Percent of reads mapping to targets in samples without blocker vs with blocker: Collapsing technical replicates
+
+First, collapse technical replicates. Later I'll do this with DESeq2, but here, just averaging counts across technical replicates for A and B samples
+```{r}
+#Get mean of A/B samples (Collapsing technical replicates)
+CollapsedCounts<- counts
+CollapsedCounts$A.0_Collapsed<- as.integer(rowMeans(counts[,1:3]))
+CollapsedCounts$B.0_Collapsed<- as.integer(rowMeans(counts[,4:6]))
+CollapsedCounts$A.1_Collapsed<- as.integer(rowMeans(counts[,9:11]))
+CollapsedCounts$B.1_Collapsed<- as.integer(rowMeans(counts[,12:14]))
+CollapsedCounts<- CollapsedCounts[,c(17,18,7,8,19,20,15,16)]
+
+colnames(CollapsedCounts)<- c("A.0", "B.0", "C.0", "D.0", "A.1", "B.1", "C.1", "D.1")
+```
+
+Next, get number of reads mapping to any of the targets and divide by the total number of reads
+```{r}
+#Get list of all targets (and very closely related miRNAs)
+target_92a<- as.character(rownames(counts[grep("-92a", rownames(counts)),]))
+target_92b<- as.character(rownames(counts[grep("-92b", rownames(counts)),]))
+target_451a<- as.character(rownames(counts[grep("-451a", rownames(counts)),]))
+target_451b<- as.character(rownames(counts[grep("-451b", rownames(counts)),]))
+target_486<- as.character(rownames(counts[grep("-486", rownames(counts)),]))
+Alltargets<- c(target_92a, target_92b, target_451a, target_451b, target_486)
+
+#get total counts for these targets in all samples
+targetCounts<- CollapsedCounts[rownames(CollapsedCounts)%in% Alltargets,]
+SumTargetCounts<- colSums(targetCounts)
+
+#Get percentage of total counts that map to targets
+PercentMapToTargets<-as.data.frame(SumTargetCounts/colSums(CollapsedCounts) *100)
+PercentMapToTargets$ID<- rownames(PercentMapToTargets)
+colnames(PercentMapToTargets)<-c("PercentMapToTarget", "ID")
+PercentMapToTargets$BlockerStatus<- c(rep("NoBlocker", 4), rep("Blocker", 4))
+PercentMapToTargets
+```
+
+
+Finally, visualize this change for all 4 samples from blocker to no blocker
+```{r}
+ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, color=BlockerStatus, fill=BlockerStatus))+
+         geom_bar(stat="identity", position="dodge")+
+  theme_classic()+
+  labs(title = "Percent of Total Reads that Map to Targets",
+       subtitle = "Technical Replicates collapsed, Target Families Included")+
+  scale_y_continuous(name="percentofTotal", breaks=c(seq(0,100, 20)), limit=c(0,100), labels=c(seq(0,100,20)))
+ 
+             
+```
+
+
+
+```{r}
+mean((PercentMapToTargets$PercentMapToTarget[1:4]-PercentMapToTargets$PercentMapToTarget[5:8])/PercentMapToTargets$PercentMapToTarget[1:4])*100
+#On average, using the blocker decreases percent mapping to targets by 80%
+```
+
+
+```{r}
+#Percent that map to actual targets
+ActualTargets<- c('hsa-miR-486-5p','hsa-miR-92a-3p','hsa-miR-451a')
+
+#get total counts for these targets in all samples
+targetCounts<- CollapsedCounts[rownames(CollapsedCounts)%in% ActualTargets,]
+SumTargetCounts<- colSums(targetCounts)
+
+#Get percentage of total counts that map to targets
+PercentMapToTargets<-as.data.frame(SumTargetCounts/colSums(CollapsedCounts) *100)
+PercentMapToTargets$ID<- rownames(PercentMapToTargets)
+colnames(PercentMapToTargets)<-c("PercentMapToTarget", "ID")
+PercentMapToTargets$BlockerStatus<- c(rep("NoBlocker", 4), rep("Blocker", 4))
+PercentMapToTargets
+
+ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, color=BlockerStatus, fill=BlockerStatus))+
+         geom_bar(stat="identity", position="dodge")+
+  theme_classic()+
+  labs(title = "Percent of Total Reads that Map to Targets",
+       subtitle = "Technical Replicates collapsed, ONLY actual Targets Included")+
+  scale_y_continuous(name="percentofTotal", breaks=c(seq(0,100, 20)), limit=c(0,100), labels=c(seq(0,100,20)))
+```
+
+```{r}
+mean((PercentMapToTargets$PercentMapToTarget[1:4]-PercentMapToTargets$PercentMapToTarget[5:8])/PercentMapToTargets$PercentMapToTarget[1:4])*100
+#On average, using the blocker decreases percent mapping to targets by 80%
+```
+
+#Look at the number of reads mapping to species in the same family as the targets but NOT the actual targets themselves:
+
+```{r}
+NotTargets<- Alltargets[!(Alltargets %in% ActualTargets)]
+
+#get total counts for these targets in all samples
+targetCounts<- CollapsedCounts[rownames(CollapsedCounts)%in% NotTargets,]
+SumTargetCounts<- colSums(targetCounts)
+
+#Get percentage of total counts that map to targets
+PercentMapToTargets<-as.data.frame(SumTargetCounts/colSums(CollapsedCounts) *100)
+PercentMapToTargets$ID<- rownames(PercentMapToTargets)
+colnames(PercentMapToTargets)<-c("PercentMapToTarget", "ID")
+PercentMapToTargets$BlockerStatus<- c(rep("NoBlocker", 4), rep("Blocker", 4))
+PercentMapToTargets
+
+ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, color=BlockerStatus, fill=BlockerStatus))+
+         geom_bar(stat="identity", position="dodge")+
+  theme_classic()+
+  labs(title = "Percent of Total Reads that Map to Targets",
+       subtitle = "Technical Replicates collapsed, ONLY actual Targets Included")+
+  scale_y_continuous(name="percentofTotal", breaks=c(seq(0,100, 20)), limit=c(0,100), labels=c(seq(0,100,20)))
+```
+
+
+#Looking at just mature still- except for 451a
+
+mir-451a has a very low expression in its mature form, but very high in its isomir form (see BlockersDecrease). Here, I'm considering the isomir form of 451a + 92a and 486 (exact targets)
+
+```{r}
+mir451<- countsInput[countsInput$ID =="hsa-mir-451a",]
+rownames(mir451)<- mir451$ID
+mir451<- mir451[,4:ncol(mir451)]
+
+counts<- rbind(counts, mir451)
+
+#Get mean of A/B samples (Collapsing technical replicates)
+CollapsedCounts<- counts
+CollapsedCounts$A.0_Collapsed<- as.integer(rowMeans(counts[,1:3]))
+CollapsedCounts$B.0_Collapsed<- as.integer(rowMeans(counts[,4:6]))
+CollapsedCounts$A.1_Collapsed<- as.integer(rowMeans(counts[,9:11]))
+CollapsedCounts$B.1_Collapsed<- as.integer(rowMeans(counts[,12:14]))
+CollapsedCounts<- CollapsedCounts[,c(17,18,7,8,19,20,15,16)]
+
+colnames(CollapsedCounts)<- c("A.0", "B.0", "C.0", "D.0", "A.1", "B.1", "C.1", "D.1")
+
+#Percent that map to actual targets
+ActualTargets<- c('hsa-miR-486-5p','hsa-miR-92a-3p','hsa-mir-451a')
+
+#get total counts for these targets in all samples
+targetCounts<- CollapsedCounts[rownames(CollapsedCounts)%in% ActualTargets,]
+SumTargetCounts<- colSums(targetCounts)
+
+#Get percentage of total counts that map to targets
+PercentMapToTargets<-as.data.frame(SumTargetCounts/colSums(CollapsedCounts) *100)
+PercentMapToTargets$ID<- rownames(PercentMapToTargets)
+colnames(PercentMapToTargets)<-c("PercentMapToTarget", "ID")
+PercentMapToTargets$BlockerStatus<- c(rep("NoBlocker", 4), rep("Blocker", 4))
+PercentMapToTargets
+
+ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, color=BlockerStatus, fill=BlockerStatus))+
+         geom_bar(stat="identity", position="dodge")+
+  theme_classic()+
+  labs(title = "Percent of Total Reads that Map to Targets",
+       subtitle = "Technical Replicates collapsed, isomir form of 451a + other 2 targets")+
+  scale_y_continuous(name="percentofTotal", breaks=c(seq(0,100, 20)), limit=c(0,100), labels=c(seq(0,100,20)))
+
+```
+
+```{r}
+mean((PercentMapToTargets$PercentMapToTarget[1:4]-PercentMapToTargets$PercentMapToTarget[5:8])/PercentMapToTargets$PercentMapToTarget[1:4])*100
+#On average, using the blocker decreases percent mapping to targets by 87%
+```
+
+
+
+#Next main section: graphing log2 of cpm
+
+```{r}
+#calculating CPM
+cpmInput<- MatureCounts
+
+#calculate factor to multiply all counts for to convert to CPM
+totalCounts<- colSums(cpmInput)
+TotalCountsPM<- 1000000/totalCounts
+
+#Convert all counts to CPM
+CPM<-cpmInput*TotalCountsPM
+#get rid of any miRNAs that have a 0 counts for any sample- can't take log2 of it
+CPMFinal<- CPM[apply(CPM, 1, function(row) all(row !=0 )),]
+
+#log2 of CPM
+CPMLog<- log2(CPMFinal)
+
+#Get miRNA info. Need: whether or not it was targeted + whether or not it was DE
+#Add in target info- add column for whether or not the species was targeted
+targets<- c('hsa-miR-486-5p','hsa-miR-92a-3p','hsa-miR-451a')
+CPMLog$target<- rownames(CPMLog) %in% targets
+
+#Add in DE info- using DESeq2 results from targets included analysis. Import data here.
+resOrdered<- read.csv(paste(wd, "DESeq2Results/MatureOnly_TargetsIncluded_Pairwise_DESeq2Results_103119.csv", sep =""))
+rownames(resOrdered)<- resOrdered$X
+resOrdered<- resOrdered[,-1]
+sig<- resOrdered[resOrdered$padj<0.05,]
+CPMLog$Sig<- rownames(CPMLog) %in% rownames(sig)
+
+#Add in third column, used to color points in graph. Add together target/sig columns. If it's a target and sig, it'll be 2, if it's just sig it'll be 1, if it's neither it'll be 0.
+TargetSig<- CPMLog[,17:18]
+CPMLog$Color<- as.factor(rowSums(TargetSig))
+CPMLog$Color<- gsub(2, "Target", CPMLog$Color)
+CPMLog$Color<- gsub(1, "DE", CPMLog$Color)
+CPMLog$Color<- gsub(0, "Not DE", CPMLog$Color)
+```
+
+```{r}
+#Looking at sample A- get average for all 3 Inputs
+CPMLogA<- CPMLog[,c(1:3, 9:11,19)]
+CPMLogA$A.0<- rowMeans(CPMLogA[,1:3])
+CPMLogA$A.1<- rowMeans(CPMLogA[,4:6])
+CPMLogA<- CPMLogA[,c(8,9,7)]
+
+pA<- ggplot(CPMLogA, aes(x=A.0, y=A.1, color=Color))+
+  geom_point()+
+  geom_abline(slope=1, color="red")+
+  scale_colour_manual(values=c("red","black", "blue"))+
+  theme_classic()
+ 
+pA
+```
+```{r}
+#Looking at sample B- get average for all 3 Inputs
+CPMLogB<- CPMLog[,c(4:6, 12:14,19)]
+CPMLogB$B.0<- rowMeans(CPMLogB[,1:3])
+CPMLogB$B.1<- rowMeans(CPMLogB[,4:6])
+CPMLogB<- CPMLogB[,c(8,9,7)]
+
+pB<- ggplot(CPMLogB, aes(x=B.0, y=B.1, color=Color))+
+  geom_point()+
+  geom_abline(slope=1, color="red")+
+  scale_colour_manual(values=c("red","black", "blue"))+
+  theme_classic()
+ 
+pB
+```
+
+
+```{r}
+#For sample C
+CPMLogC<- CPMLog[,c(7, 15,19)]
+colnames(CPMLogC)<- c("C.0", "C.1", "Color")
+
+pC<- ggplot(CPMLogC, aes(x=C.0, y=C.1, color=Color))+
+  geom_point()+
+  geom_abline(slope=1, color="red")+
+  scale_colour_manual(values=c("red","black", "blue"))+
+  theme_classic()
+ 
+pC
+```
+
+```{r}
+#For sample D
+CPMLogD<- CPMLog[,c(7, 15,19)]
+colnames(CPMLogD)<- c("D.0", "D.1", "Color")
+
+pD<- ggplot(CPMLogD, aes(x=D.0, y=D.1, color=Color))+
+  geom_point()+
+  geom_abline(slope=1, color="red")+
+  scale_colour_manual(values=c("red","black", "blue"))+
+  theme_classic()
+ 
+pD
+```
+
+```{r}
+#Averaging values across al 4 samples
+CPMLogAll<- CPMLog
+CPMLogAll$NoBlocker<- rowMeans(CPMLogAll[,1:8])
+CPMLogAll$Blocker<- rowMeans(CPMLogAll[,9:16])
+CPMLogAll<- CPMLogAll[,c(20,21,19)]
+
+pMean<- ggplot(CPMLogAll, aes(x=NoBlocker, y=Blocker, color=Color))+
+  geom_point()+
+  geom_abline(slope=1, color="red")+
+  scale_colour_manual(values=c("red","black", "blue"))+
+  theme_classic()
+ 
+pMean
+```
+
+Putting A-D together on one plot:
+```{r}
+grid.arrange(pA, pB, pC, pD, nrow=2)
+```
+
+
+
+
+#Benefits of blocker: better detection of miRNAs with low counts
+
+Want to look at the number of species that pass a certain numerical threshold for counts- i.e., how many species get at least 100 counts for blocker vs no blocker?
+
+However- big problem: the blocker samples have about 50% of the total reads that no blocker do. So the no blocker will have a much better detection of low level expression- during LC, they would have had a much better chance of picking up lowly expressed miRNAs
+
+So we can't really just normalize- that doesn't quite account for this. 
+
+The way that meyers et al does it (and for much of their paper- might be a good idea to replicate all the other analyses using this type of normalized counts) is to "downsample" their data
+
+This is meant to simulate having the same number of reads/identical LC
+
+They downsample to 6mill reads- I'm downsampling to about 5 million reads, for no reason at all
+
+
+#Performing downsampling
+```{r}
+SampledCounts<- downsample.counts(MatureCounts, seed=42)
+write.csv(SampledCounts, paste(wd, "OtherResults/DownSampledCounts_MatureOnly_metaseqR_110119.csv", sep =""))
+
+```
+
+#Using the subsampled count matrix generated above, recreate figure 3 from meyers et al: looking at the change in the # of miRNAs that pass a variety of count thresholds for blocked vs unblocked samples. 
+
+Kind of different to what they're plotting, but same idea
+
+```{r}
+#read in data
+SampledCounts<- read.csv(paste(wd, "OtherResults/DownSampledCounts_MatureOnly_metaseqR_110119.csv", sep =""))
+rownames(SampledCounts)<- SampledCounts$X
+SampledCounts<- SampledCounts[,-1]
+
+#Collapse technical replicates (by just taking mean of counts)
+unblockedCounts<- as.data.frame(SampledCounts[,1:8])
+unblockedCounts$ACollapsed<- rowMeans(unblockedCounts[,1:3])
+unblockedCounts$BCollapsed<- rowMeans(unblockedCounts[,4:6])
+unblockedCounts<-unblockedCounts[,c(9,10,7,8)]
+
+#get mean counts across all 4 samples
+unblockedCountsMeans<- as.data.frame((rowMeans(unblockedCounts)))
+
+#number that pass thresholds:
+unblockedPassThresholds<- data.frame(threshold=c(1,5,10,50,100,500), countsPassingThreshold=c(sum(unblockedCountsMeans>1),sum(unblockedCountsMeans>5),sum(unblockedCountsMeans>10),sum(unblockedCountsMeans>50),sum(unblockedCountsMeans>100),sum(unblockedCountsMeans>500)))
+
+#blocked: collapse technical replicates (by just taking mean of counts)
+blockedCounts<- as.data.frame(SampledCounts[,9:16])
+blockedCounts$ACollapsed<- rowMeans(blockedCounts[,1:3])
+blockedCounts$BCollapsed<- rowMeans(blockedCounts[,4:6])
+blockedCounts<-blockedCounts[,c(9,10,7,8)]
+
+#get mean counts across all 4 samples
+blockedCountsMeans<- as.data.frame((rowMeans(blockedCounts)))
+
+#number that pass thresholds:
+blockedPassThresholds<- data.frame(threshold=c(1,5,10,50,100,500), countsPassingThreshold=c(sum(blockedCountsMeans>1),sum(blockedCountsMeans>5),sum(blockedCountsMeans>10),sum(blockedCountsMeans>50),sum(blockedCountsMeans>100),sum(blockedCountsMeans>500)))
+
+#combine into one, adding in an extra column for blocker status
+unblockedPassThresholds$status<- rep("unblocked",6)
+blockedPassThresholds$status<- rep("blocked",6)
+passThreshold<-rbind(unblockedPassThresholds,blockedPassThresholds)
+
+#plot
+p<- ggplot(passThreshold, aes(x=threshold, y=countsPassingThreshold, color=status))+
+             geom_line(size=2)+
+  geom_point(size=4)+
+  scale_color_manual(values=c("black", "red"))+
+  ggtitle("Number of miRNAs passing a count threshold")+
+  theme_classic()
+p
+```
+
+
+
+
+#doing the above, but not taking the mean. still collapse technical, but keep a/b/c/d info. Add in a 4th column in the final table with sample type. Then subtract the #passing threshold for a/b/c/d individually from blocker vs no blocker, then graph. 
+
+whoowhweeee
+
+
+```{r}
+#write (awful) function that takes a column of counts and returns the number of species that pass the 6 threshold already written into the function, bc i am stupid
+CountsPassingThreshold<- function(counts){
+  return(c(sum(counts>1),sum(counts>5),sum(counts>10),sum(counts>50),sum(counts>100),sum(counts>500),sum(counts>1000)))
+}
+
+#Get counts passing threshold for unblocked samples, then transform data- 4 columns: ID (A/b/c/d), threshold, #of species that passed that threshold, and blocker status
+unblockedPassThreshold<- as.data.frame(apply(unblockedCounts, 2, CountsPassingThreshold))
+rownames(unblockedPassThreshold)<- c(1,5,10,50,100,500,1000)
+colnames(unblockedPassThreshold)<- c("A", "B", "C", "D")
+#add 4th column: mean of all samples
+unblockedPassThreshold$Mean<- rowMeans(unblockedPassThreshold)
+unblockedPassThreshold<- as.data.frame(t(unblockedPassThreshold))
+unblockedPassThreshold$ID<- rownames(unblockedPassThreshold)
+#reformat- melt
+unblockedPassThreshold<- melt(unblockedPassThreshold)
+colnames(unblockedPassThreshold)<- c("ID", "threshold","speciesPassingThreshold")
+unblockedPassThreshold$status<- rep("unblocked", 35)
+unblockedPassThreshold$threshold<- as.integer(as.character((unblockedPassThreshold$threshold)))
+
+#Get counts passing threshold for blocked samples, then transform data- 4 columns: ID (A/b/c/d), threshold, #of species that passed that threshold, and blocker status
+blockedPassThreshold<- as.data.frame(apply(blockedCounts, 2, CountsPassingThreshold))
+rownames(blockedPassThreshold)<- c(1,5,10,50,100,500,1000)
+colnames(blockedPassThreshold)<- c("A", "B", "C", "D")
+#add 4th column: mean of all samples
+blockedPassThreshold$Mean<- rowMeans(blockedPassThreshold)
+blockedPassThreshold<- as.data.frame(t(blockedPassThreshold))
+blockedPassThreshold$ID<- rownames(blockedPassThreshold)
+#reformat- melt
+blockedPassThreshold<- melt(blockedPassThreshold)
+colnames(blockedPassThreshold)<- c("ID", "threshold","speciesPassingThreshold")
+blockedPassThreshold$status<- rep("blocked", 35)
+blockedPassThreshold$threshold<- as.integer(as.character((blockedPassThreshold$threshold)))
+
+#combine into one
+passThreshold<-rbind(unblockedPassThreshold,blockedPassThreshold)
+
+#reformat so that you have 4 columns: ID, threshold, #species passing in noblocker, #species passing in blocker
+PT<-data.frame(passThreshold$ID[1:35], passThreshold$threshold[1:35],passThreshold$speciesPassingThreshold[1:35], passThreshold$speciesPassingThreshold[36:70])
+colnames(PT)<- c("ID", "threshold", "SpeciesPT_noblocker", "SpeciesPT_blocker")
+
+#now need to subtract each- i.e., sample A at threshold 1 with no blocker vs with blocker. get those values for all, then plot. 
+df<- as_tibble(PT)
+df<-df%>% group_by(ID) %>% mutate(BlockerMinusNoBlocker=SpeciesPT_blocker-SpeciesPT_noblocker)
+df<- as.data.frame(df)
+
+#plot
+p<- ggplot(df, aes(x=threshold, y=BlockerMinusNoBlocker, color=ID))+
+             geom_line(size=1.5)+
+  geom_point(size=3)+
+  scale_color_manual(values=c("turquoise2", "deeppink1", "goldenrod1", "darkviolet","black"))+
+  ggtitle("Number of miRNAs passing a count threshold")+
+  theme_classic()
+p
+
+```
+
+
+#Next main section: count variation in 3 A0 vs 3 A1- does blocker lower variation?
+
+```{r}
+A0<- MatureCounts[,1:3]
+A0Mean<-mean(sd(A0$A.190.0), sd(A0$A.570.0), sd(A0$A.760.0))
+A1<- MatureCounts[,9:11]
+A1Mean<-mean(sd(A1$A.380.1), sd(A1$A.570.1), sd(A1$A.760.1))
+
+
+(A0Mean-A1Mean)/A0Mean *100
+#65% higher variance in no blocker A than in blocker A
+```
+So seems to suggest that variance is lowered when you use blocker
+
+Repating with sample B, C, D
+```{r}
+B0<- MatureCounts[,4:6]
+B0Mean<-mean(sd(B0$B.190.0), sd(B0$B.570.0), sd(B0$B.760.0))
+
+B1<- MatureCounts[,12:14]
+B1Mean<-mean(sd(B1$B.380.1), sd(B1$B.570.1), sd(B1$B.760.1))
+
+(B0Mean-B1Mean)/B0Mean *100
+#86% higher variance in no blocker than in blocker
+
+C0<- MatureCounts[,7]
+C0Mean<-sd(C0)
+
+C1<- MatureCounts[,15]
+C1Mean<-sd(C1)
+
+(C0Mean-C1Mean)/C0Mean *100
+#89% higher variance in no blocker than in blocker
+
+D0<- MatureCounts[,8]
+D0Mean<-sd(D0)
+
+D1<- MatureCounts[,16]
+D1Mean<-sd(D1)
+
+(D0Mean-D1Mean)/D0Mean *100
+#85% higher variance in no blocker than in blocker
+```
+
+Plotting these changes in variances
+```{r}
+df<- data.frame(sample = c("A", "A", "B", "B", "C", "C", "D", "D"), blockerStatus=rep(c("noblocker", "blocker"),4), Variation=c(A0Mean, A1Mean, B0Mean, B1Mean, C0Mean, C1Mean, D0Mean,D1Mean))
+
+p1<-ggplot(df, aes(x=sample, y=Variation, color=blockerStatus, fill=blockerStatus))+
+  geom_bar(stat="identity", position="dodge")+
+  theme_classic()+
+  scale_y_continuous(name="Variation: SD", breaks=c(seq(0,160000,10000)), limit=c(0,160000), labels=c(seq(0,160000,10000)))+
+  labs(title="Mean Standard Deviation of Raw Counts in Samples A and B")
+p1
+```
+
+
+Repeating the above using the downsampled counts data frame instead
+```{r}
+A0<- SampledCounts[,1:3]
+A0Mean<-mean(sd(A0$A.190.0), sd(A0$A.570.0), sd(A0$A.760.0))
+A1<- SampledCounts[,9:11]
+A1Mean<-mean(sd(A1$A.380.1), sd(A1$A.570.1), sd(A1$A.760.1))
+
+
+(A0Mean-A1Mean)/A0Mean *100
+#51% higher variance in no blocker A than in blocker A
+```
+So seems to suggest that variance is lowered when you use blocker
+
+Repating with sample B, C, D
+```{r}
+B0<- SampledCounts[,4:6]
+B0Mean<-mean(sd(B0$B.190.0), sd(B0$B.570.0), sd(B0$B.760.0))
+
+B1<- SampledCounts[,12:14]
+B1Mean<-mean(sd(B1$B.380.1), sd(B1$B.570.1), sd(B1$B.760.1))
+
+(B0Mean-B1Mean)/B0Mean *100
+#68% higher variance in no blocker than in blocker
+
+C0<- SampledCounts[,7]
+C0Mean<-sd(C0)
+
+C1<- SampledCounts[,15]
+C1Mean<-sd(C1)
+
+(C0Mean-C1Mean)/C0Mean *100
+#57% higher variance in no blocker than in blocker
+
+D0<- SampledCounts[,8]
+D0Mean<-sd(D0)
+
+D1<- SampledCounts[,16]
+D1Mean<-sd(D1)
+
+(D0Mean-D1Mean)/D0Mean *100
+#57% higher variance in no blocker than in blocker
+```
+```{r}
+df<- data.frame(sample = c("A", "A", "B", "B", "C", "C", "D", "D"), blockerStatus=rep(c("noblocker", "blocker"),4), Variation=c(A0Mean, A1Mean, B0Mean, B1Mean, C0Mean, C1Mean, D0Mean,D1Mean))
+
+P2<-ggplot(df, aes(x=sample, y=Variation, color=blockerStatus, fill=blockerStatus))+
+  geom_bar(stat="identity", position="dodge")+
+  theme_classic()+
+  scale_y_continuous(name="Variation: SD", breaks=c(seq(0,160000,10000)), limit=c(0,160000), labels=c(seq(0,160000,10000)))+
+  labs(title="Mean Standard Deviation of Downsampled Mature Counts")
+P2
+```
+
+```{r}
+grid.arrange(p1,p2, nrow=1)
+```

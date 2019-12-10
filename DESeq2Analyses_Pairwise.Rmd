@@ -1,0 +1,949 @@
+---
+title: "Pairwise DESeq2 analysis"
+output: html_notebook
+---
+Import libraries
+```{r}
+suppressPackageStartupMessages(library(DESeq2))
+suppressPackageStartupMessages(library(pheatmap))
+suppressPackageStartupMessages(library(viridis))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(reshape2))
+suppressPackageStartupMessages(library(grid))
+suppressPackageStartupMessages(library(gridExtra))
+```
+
+
+Read in data
+```{r}
+wd<- "//Cifs2/rcdata$/Channing_miRNA_Blocker_Test/"
+countsInput<- read.delim(paste(wd, "TGC_Data/mirna-blocker_bs_mature-isomirs_raw.txt", sep =""))
+
+#reformat counts data
+counts<- countsInput
+rownames(counts)<- counts$ID
+counts<- counts[,c(4:(ncol(counts)))]
+```
+
+#Using mature and isomir data for DESeq2 input
+
+```{r}
+#rename rows, removing input info
+colnames(counts)<- c(rep("A.0", 3), rep("B.0", 3), "C.0", "D.0", rep("A.1", 3), rep("B.1", 3), "C.1", "D.1")
+
+#################
+#create metadata#
+#################
+
+#set blocker status
+sampleGroup<- as.factor(c(rep("NoBlocker", 8), rep("Blocker", 8)))
+#this column is used to collapse technical replicates
+sample<- colnames(counts)
+#this column is to control for sample to sample differences
+patient<- as.factor(c(rep("A", 3), rep("B", 3), "C", "D", rep("A", 3), rep("B", 3), "C", "D"))
+meta<- data.frame(sample, sampleGroup, patient)
+
+#create DESeq2 object- just based on samplegroup (blockerstatus), will add samples to model later
+dds<- DESeqDataSetFromMatrix(countData=counts, 
+                             colData=meta, 
+                             design=~sampleGroup)
+
+#Collapse replicates- using internal DESeq2 function
+ddsColl<- collapseReplicates(dds, dds$sample)
+
+#Create model that takes into account sample differences
+ddsMF<- ddsColl
+design(ddsMF)<- formula(~patient + sampleGroup)
+
+#run DESeq2
+dds<- DESeq(ddsMF)
+
+#Normalized (variance stabilized transformation), then run PCA
+vsd <- varianceStabilizingTransformation(ddsMF, blind=FALSE)
+PCA<-plotPCA(vsd, intgroup="sampleGroup",returnData=TRUE)
+
+p<- ggplot(PCA, aes(x=PC1, y=PC2, color=group))+
+  geom_point(size=4)+
+  scale_color_manual(values=c("orangered1","springgreen2"))+
+  theme_classic()+
+  ggtitle("PCA: Blocker vs no Blocker, Mature + Isomirs")
+  
+p
+```
+
+
+#DESeq2 results
+```{r}
+res<- results(dds)
+res<- na.omit(res)
+resOrdered<- res[order(res$padj),]
+nrow(resOrdered[resOrdered$padj<0.01,])
+#55 DE miRNAs- padj <0.05
+#31 DE miRNAs- padj <0.01
+
+rownames(resOrdered[resOrdered$padj<0.01,])
+
+```
+
+
+Visualizing DE with heatmap:
+```{r}
+rld<- rlog(dds)
+topgenes<- rownames(resOrdered[1:75,])
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+subtractFromMin<- 0
+subtractFromMax<- 1
+lengthOut<- 75
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)))
+```
+
+
+#Repeating the above analysis, with only mature miRNAs as input instead:
+
+```{r}
+#Select just mature miRNAs. let7 needs to be searched for separately
+MatureCounts<- counts[grep("R", rownames(counts)),]
+let7<- counts[grep("let", rownames(counts)),]
+MatureCounts<- rbind(MatureCounts, let7)
+counts<- MatureCounts
+
+#rename rows, removing input info
+colnames(counts)<- c(rep("A.0", 3), rep("B.0", 3), "C.0", "D.0", rep("A.1", 3), rep("B.1", 3), "C.1", "D.1")
+
+#################
+#create metadata#
+#################
+
+#set blocker status
+sampleGroup<- as.factor(c(rep("NoBlocker", 8), rep("Blocker", 8)))
+#this column is used to collapse technical replicates
+sample<- colnames(counts)
+#this column is to control for sample to sample differences
+patient<- as.factor(c(rep("A", 3), rep("B", 3), "C", "D", rep("A", 3), rep("B", 3), "C", "D"))
+meta<- data.frame(sample, sampleGroup, patient)
+
+#create DESeq2 object- just based on samplegroup (blockerstatus), will add samples to model later
+dds<- DESeqDataSetFromMatrix(countData=counts, 
+                             colData=meta, 
+                             design=~sampleGroup)
+
+#Collapse replicates- using internal DESeq2 function
+ddsColl<- collapseReplicates(dds, dds$sample)
+
+#Create model that takes into account sample differences
+ddsMF<- ddsColl
+design(ddsMF)<- formula(~patient + sampleGroup)
+
+#run DESeq2
+dds<- DESeq(ddsMF)
+
+#Normalized (variance stabilized transformation), then run PCA
+vsd <- varianceStabilizingTransformation(dds, blind=FALSE)
+PCA<-plotPCA(vsd, intgroup="sampleGroup",returnData=TRUE)
+
+p<- ggplot(PCA, aes(x=PC1, y=PC2, color=group))+
+  geom_point(size=4)+
+  scale_color_manual(values=c("orangered1","springgreen2"))+
+  theme_classic()+
+  ggtitle("PCA: Blocker vs no Blocker, Mature ONLY")
+  
+p
+
+```
+
+```{r}
+res<- results(dds)
+res<- na.omit(res)
+resOrdered<- res[order(res$padj),]
+nrow(resOrdered[resOrdered$padj<0.01,])
+#18 DE miRNAs- padj <0.05
+#13 DE miRNAs- padj <0.01
+
+rownames(resOrdered[resOrdered$padj<0.05,])
+```
+
+```{r}
+#Save these off target mIRNAs for later
+sigDE_mature<- resOrdered[resOrdered$padj<0.01,]
+```
+
+```{r}
+rld<- rlog(dds)
+topgenes<- rownames(resOrdered[1:20,])
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+subtractFromMin<- 0
+subtractFromMax<- 1
+lengthOut<- 75
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)))
+```
+
+```{r}
+#write to file \
+write.csv(resOrdered, paste(wd, "DESeq2Results/MatureOnly_Pairwise_DESeq2Results_103119.csv", sep = "" ))
+```
+
+For fun- looking at just sample A here. technical replicates not collapsed. Using only mature.
+
+```{r}
+SampleA<- counts[,grep("A", colnames(counts))]
+
+#set blocker status
+sampleGroup<- as.factor(c(rep("NoBlocker", 3), rep("Blocker", 3)))
+#this column is used to collapse technical replicates
+sample<- colnames(SampleA)
+
+meta<- data.frame(sample, sampleGroup)
+
+#create DESeq2 object- just based on samplegroup (blockerstatus), will add samples to model later
+dds<- DESeqDataSetFromMatrix(countData=SampleA, 
+                             colData=meta, 
+                             design=~sampleGroup)
+
+
+#run DESeq2
+dds<- DESeq(dds)
+
+#Normalized (variance stabilized transformation), then run PCA
+vsd <- varianceStabilizingTransformation(dds, blind=FALSE)
+PCA<-plotPCA(vsd, intgroup="sampleGroup",returnData=TRUE)
+
+p<- ggplot(PCA, aes(x=PC1, y=PC2, color=group))+
+  geom_point(size=4)+
+  scale_color_manual(values=c("orangered1","springgreen2"))+
+  theme_classic()+
+  ggtitle("PCA: Blocker vs no Blocker")
+  
+p
+```
+
+```{r}
+res<- results(dds)
+res<- na.omit(res)
+resOrdered<- res[order(res$padj),]
+nrow(resOrdered[resOrdered$padj<0.01,])
+#9 DE miRNAs- padj <0.05
+#6 DE miRNAs- padj <0.01
+
+rownames(resOrdered[resOrdered$padj<0.05,])
+```
+
+```{r}
+rld<- rlog(dds)
+topgenes<- rownames(resOrdered[1:20,])
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+subtractFromMin<- 0
+subtractFromMax<- 1
+lengthOut<- 75
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)))
+```
+
+For fun- looking at just sample B here. technical replicates not collapsed. Using only mature.
+
+```{r}
+SampleB<- counts[,grep("B", colnames(counts))]
+
+#set blocker status
+sampleGroup<- as.factor(c(rep("NoBlocker", 3), rep("Blocker", 3)))
+#this column is used to collapse technical replicates
+sample<- colnames(SampleB)
+
+meta<- data.frame(sample, sampleGroup)
+
+#create DESeq2 object- just based on samplegroup (blockerstatus), will add samples to model later
+dds<- DESeqDataSetFromMatrix(countData=SampleB, 
+                             colData=meta, 
+                             design=~sampleGroup)
+
+
+#run DESeq2
+dds<- DESeq(dds)
+
+#Normalized (variance stabilized transformation), then run PCA
+vsd <- varianceStabilizingTransformation(dds, blind=FALSE)
+PCA<-plotPCA(vsd, intgroup="sampleGroup",returnData=TRUE)
+
+p<- ggplot(PCA, aes(x=PC1, y=PC2, color=group))+
+  geom_point(size=4)+
+  scale_color_manual(values=c("orangered1","springgreen2"))+
+  theme_classic()+
+  ggtitle("PCA: Blocker vs no Blocker")
+  
+p
+```
+
+```{r}
+res<- results(dds)
+res<- na.omit(res)
+resOrdered<- res[order(res$padj),]
+nrow(resOrdered[resOrdered$padj<0.05,])
+#6 DE miRNAs
+
+rownames(resOrdered[resOrdered$padj<0.05,])
+```
+
+```{r}
+rld<- rlog(dds)
+topgenes<- rownames(resOrdered[1:20,])
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+subtractFromMin<- 0
+subtractFromMax<- 1
+lengthOut<- 75
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)))
+```
+
+
+#Looking at off target effects
+
+Graphing raw counts for all sig DE
+```{r}
+targetfamilies<- c(Alltargets, "hsa-miR-25-3p")
+sigCounts<- MatureCounts[rownames(MatureCounts) %in% rownames(sigDE_mature),]
+sigCounts$Mean<- rowMeans(sigCounts)
+sigCounts$ID<- rownames(sigCounts)
+sigCounts<- sigCounts[order(sigCounts$Mean),]
+sigCounts$TargetFamilies<-rownames(sigCounts) %in% targetfamilies
+
+ggplot(sigCounts[,c(17:19)], aes(x=ID, y=Mean,color=TargetFamilies, fill=TargetFamilies))+
+  geom_bar(stat="identity", position="dodge")+
+  theme_classic()+
+  labs(title = "Mean Raw counts of sig DE miRNAs",
+       subtitle = "")+
+  theme(axis.text.x = element_text(angle = 90))+
+  scale_y_continuous(name="Mean raw counts")
+```
+
+Graphing log2 fold change for all sig DE
+
+```{r}
+df<- data.frame(ID=rownames(sigDE_mature), log2=sigDE_mature$log2FoldChange, targetFamilies= rownames(sigDE_mature) %in% targetfamilies)
+
+#get rid of any miRNAs where the mean count is < 50
+sigCounts<- sigCounts[rowMeans(sigCounts[,1:16])>50,]
+
+ggplot(df, aes(x=ID, y=log2,color=targetFamilies, fill=targetFamilies))+
+  geom_bar(stat="identity", position="dodge")+
+  theme_classic()+
+  labs(title = "Log2 fold change of sig DE miRNAs",
+       subtitle = "")+
+  theme(axis.text.x = element_text(angle = 90))+
+  scale_y_continuous(name="log2 fold change")
+
+```
+
+```{r}
+#sig de with postiive log fold 2 change
+poslog2<-rownames(sigDE_mature[sigDE_mature$log2FoldChange>0,])
+POTs<- poslog2[!(poslog2 %in% targetfamilies)]
+
+rowMeans(MatureCounts[rownames(MatureCounts) %in% POTs,])
+```
+
+
+#Remove targets --> Run DESeq2
+
+```{r}
+#Get list of all targets
+ActualTargets<- c('hsa-miR-486-5p','hsa-miR-92a-3p','hsa-miR-451a')
+
+#subset counts (mature only) by non-target miRNAs
+counts<- counts[!(rownames(counts) %in% ActualTargets),]
+
+#################
+#create metadata#
+#################
+
+#set blocker status
+sampleGroup<- as.factor(c(rep("NoBlocker", 8), rep("Blocker", 8)))
+#this column is used to collapse technical replicates
+sample<- colnames(counts)
+#this column is to control for sample to sample differences
+patient<- as.factor(c(rep("A", 3), rep("B", 3), "C", "D", rep("A", 3), rep("B", 3), "C", "D"))
+meta<- data.frame(sample, sampleGroup, patient)
+
+#create DESeq2 object- just based on samplegroup (blockerstatus), will add samples to model later
+dds<- DESeqDataSetFromMatrix(countData=counts, 
+                             colData=meta, 
+                             design=~sampleGroup)
+
+#Collapse replicates- using internal DESeq2 function
+ddsColl<- collapseReplicates(dds, dds$sample)
+
+#Create model that takes into account sample differences
+ddsMF<- ddsColl
+design(ddsMF)<- formula(~patient + sampleGroup)
+
+#run DESeq2
+dds<- DESeq(ddsMF)
+
+#Normalized (variance stabilized transformation), then run PCA
+vsd <- varianceStabilizingTransformation(ddsMF, blind=FALSE)
+PCA<-plotPCA(vsd, intgroup="sampleGroup",returnData=TRUE)
+
+p<- ggplot(PCA, aes(x=PC1, y=PC2, color=group))+
+  geom_point(size=4)+
+  scale_color_manual(values=c("orangered1","springgreen2"))+
+  theme_classic()+
+  ggtitle("PCA: Blocker vs no Blocker, Mature ONLY")
+  
+p
+```
+
+
+Samples still cluster by SAMPLE when you remove targets from the analysis- even for pairwise analysis!
+
+```{r}
+res<- results(dds)
+res<- na.omit(res)
+resOrdered<- res[order(res$padj),]
+nrow(resOrdered[resOrdered$padj<0.01,])
+#17 DE miRNAs padj <0.05
+#13 DE miRNAs padj <0.01
+
+rownames(resOrdered[resOrdered$padj<0.01,])
+```
+
+```{r}
+rld<- rlog(dds)
+topgenes<- rownames(resOrdered[1:20,])
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+subtractFromMin<- 0
+subtractFromMax<- 1
+lengthOut<- 75
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)))
+```
+
+
+
+
+```{r}
+#Looking at the off targets from this analysis
+sigDE_mature<- resOrdered[resOrdered$padj<0.01,]
+targetfamilies<- c(Alltargets, "hsa-miR-25-3p")
+sigCounts<- MatureCounts[rownames(MatureCounts) %in% rownames(sigDE_mature),]
+sigCounts$Mean<- rowMeans(sigCounts)
+sigCounts$ID<- rownames(sigCounts)
+sigCounts<- sigCounts[order(sigCounts$Mean),]
+sigCounts$TargetFamilies<-rownames(sigCounts) %in% targetfamilies
+
+#get rid of any miRNAs where the mean count is < 50
+sigCounts<- sigCounts[rowMeans(sigCounts[,1:16])>50,]
+
+ggplot(sigCounts[,c(17:19)], aes(x=ID, y=Mean,color=TargetFamilies, fill=TargetFamilies))+
+  geom_bar(stat="identity", position="dodge")+
+  theme_classic()+
+  labs(title = "Mean Raw counts of sig DE miRNAs",
+       subtitle = "")+
+  scale_y_continuous(name="Mean raw counts")+
+  theme(axis.text.x = element_text(angle = 90))
+
+```
+
+
+```{r}
+df<- data.frame(ID=rownames(sigDE_mature), log2=sigDE_mature$log2FoldChange, targetFamilies= rownames(sigDE_mature) %in% targetfamilies)
+
+ggplot(df, aes(x=ID, y=log2,color=targetFamilies, fill=targetFamilies))+
+  geom_bar(stat="identity", position="dodge")+
+  theme_classic()+
+  labs(title = "Log2 fold change of sig DE miRNAs",
+       subtitle = "")+
+  theme(axis.text.x = element_text(angle = 90))+
+  scale_y_continuous(name="log2 fold change")
+```
+
+#DESeq2: on families
+
+Same as previously, just running for pairwise
+
+```{r}
+#Import families
+families<- read.delim(paste(wd, "TGC_Data/mirna-blocker_bs_mirna-families_raw.txt", sep =""))
+rownames(families)<- families$ID
+families<- families[,4:ncol(families)]
+```
+
+```{r}
+#rename rows, removing input info
+colnames(families)<- c(rep("A.0", 3), rep("B.0", 3), "C.0", "D.0", rep("A.1", 3), rep("B.1", 3), "C.1", "D.1")
+
+#################
+#create metadata#
+#################
+
+#set blocker status
+sampleGroup<- as.factor(c(rep("NoBlocker", 8), rep("Blocker", 8)))
+#this column is used to collapse technical replicates
+sample<- colnames(families)
+#this column is to control for sample to sample differences
+patient<- as.factor(c(rep("A", 3), rep("B", 3), "C", "D", rep("A", 3), rep("B", 3), "C", "D"))
+meta<- data.frame(sample, sampleGroup, patient)
+
+#create DESeq2 object- just based on samplegroup (blockerstatus), will add samples to model later
+dds<- DESeqDataSetFromMatrix(countData=families, 
+                             colData=meta, 
+                             design=~sampleGroup)
+
+#Collapse replicates- using internal DESeq2 function
+ddsColl<- collapseReplicates(dds, dds$sample)
+
+#Create model that takes into account sample differences
+ddsMF<- ddsColl
+design(ddsMF)<- formula(~patient + sampleGroup)
+
+#run DESeq2
+dds<- DESeq(ddsMF)
+
+#Normalized (variance stabilized transformation), then run PCA
+vsd <- varianceStabilizingTransformation(ddsMF, blind=FALSE)
+PCA<-plotPCA(vsd, intgroup="sampleGroup",returnData=TRUE)
+
+p<- ggplot(PCA, aes(x=PC1, y=PC2, color=group))+
+  geom_point(size=4)+
+  scale_color_manual(values=c("orangered1","springgreen2"))+
+  theme_classic()+
+  ggtitle("PCA: Blocker vs no Blocker, Mature + Isomirs")
+  
+p
+```
+
+
+```{r}
+res<- results(dds)
+res<- na.omit(res)
+resOrdered<- res[order(res$padj),]
+nrow(resOrdered[resOrdered$padj<0.05,])
+#20 DE miRNAs
+
+rownames(resOrdered[resOrdered$padj<0.05,])
+
+```
+
+
+Visualizing DE with heatmap:
+```{r}
+#rld<- rlog(dds)
+topgenes<- rownames(resOrdered[1:25,])
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+subtractFromMin<- 0
+subtractFromMax<- 1
+lengthOut<- 75
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)))
+```
+
+
+
+
+
+
+
+
+
+#Improvements with blockers- DESeq2 of A0 vs B0 and A1 vs B1
+
+#Next main section: Does using blocker get you more DE- A0 vs B0 compared to A1 vs B1
+
+
+DESeq2 using A0 vs B0 - here, technical replicates are NOT collapsed
+
+ALSO- PAIRWISE ANALYSIS NOT PERFORMED
+Don't want to control for sample differences here, since we're comparing between samples
+```{r}
+#rename rows, removing input info
+A0_B0<- MatureCounts[,c(1:6)]
+colnames(A0_B0)<- c("A.0.1", "A.0.2", "A.0.3", "B.0.1", "B.0.2", "B.0.3")
+
+#create metadata
+sampleGroup<- c(rep("NoBlocker", 3), rep("Blocker", 3))
+sample<- colnames(A0_B0)
+meta<- data.frame(sample, sampleGroup)
+
+#create DESeq2 object
+dds<- DESeqDataSetFromMatrix(countData=A0_B0, 
+                             colData=meta, 
+                             design=~sampleGroup)
+
+
+dds<- DESeq(dds)
+
+res<- results(dds)
+res<- na.omit(res)
+resOrdered<- res[order(res$padj),]
+nrow(resOrdered[resOrdered$padj<0.05,])
+#49 DE miRNAs
+```
+
+```{r}
+rld<- rlog(dds)
+topgenes<- rownames(resOrdered[resOrdered$padj<0.05,])
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+subtractFromMin<- 0
+subtractFromMax<- 1
+lengthOut<- 75
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)))
+```
+
+
+DESeq2 using A1 vs B1- here, technical replicates are NOT collapsed
+```{r}
+#rename rows, removing input info
+A1_B1<- MatureCounts[,c(9:14)]
+colnames(A0_B0)<- c("A.1.1", "A.1.2", "A.1.3", "B.1.1", "B.1.2", "B.1.3")
+
+#create metadata
+sampleGroup<- c(rep("NoBlocker", 3), rep("Blocker", 3))
+sample<- colnames(A1_B1)
+meta<- data.frame(sample, sampleGroup)
+
+#create DESeq2 object
+dds<- DESeqDataSetFromMatrix(countData=A1_B1, 
+                             colData=meta, 
+                             design=~sampleGroup)
+
+
+dds<- DESeq(dds)
+
+res<- results(dds)
+res<- na.omit(res)
+resOrdered<- res[order(res$padj),]
+nrow(resOrdered[resOrdered$padj<0.05,])
+#83 DE miRNAs
+```
+
+```{r}
+rld<- rlog(dds)
+topgenes<- rownames(resOrdered[resOrdered$padj<0.05,])
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+subtractFromMin<- 0
+subtractFromMax<- 1
+lengthOut<- 75
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)))
+```
+
+
+
+
+
+#Now using downsampled Counts: repeating a few analyses:
+
+1) mature downsampled counts --> keep targets --> DESeq2
+  -PCA
+  -graph raw counts/fold change of sig DE
+2) mature downsampled counts --> removed targets --> DESeq2
+  -PCA
+  -graph raw counts/fold change of sig DE
+3) log of cpm of mature downsampled counts
+
+
+#Number 1: mature downsampled --> DESeq2
+
+```{r}
+#read in downsampled data
+SampledCounts<- read.csv(paste(wd, "OtherResults/DownSampledCounts_MatureOnly_metaseqR_110119.csv", sep =""))
+rownames(SampledCounts)<- SampledCounts$X
+SampledCounts<- SampledCounts[,-1]
+```
+
+
+DEseq2
+```{r}
+counts<- SampledCounts
+
+#rename rows, removing input info
+colnames(counts)<- c(rep("A.0", 3), rep("B.0", 3), "C.0", "D.0", rep("A.1", 3), rep("B.1", 3), "C.1", "D.1")
+
+#################
+#create metadata#
+#################
+
+#set blocker status
+sampleGroup<- as.factor(c(rep("NoBlocker", 8), rep("Blocker", 8)))
+#this column is used to collapse technical replicates
+sample<- colnames(counts)
+#this column is to control for sample to sample differences
+patient<- as.factor(c(rep("A", 3), rep("B", 3), "C", "D", rep("A", 3), rep("B", 3), "C", "D"))
+meta<- data.frame(sample, sampleGroup, patient)
+
+#create DESeq2 object- just based on samplegroup (blockerstatus), will add samples to model later
+dds<- DESeqDataSetFromMatrix(countData=counts, 
+                             colData=meta, 
+                             design=~sampleGroup)
+
+#Collapse replicates- using internal DESeq2 function
+ddsColl<- collapseReplicates(dds, dds$sample)
+
+#Create model that takes into account sample differences
+ddsMF<- ddsColl
+design(ddsMF)<- formula(~patient + sampleGroup)
+
+#run DESeq2
+dds<- DESeq(ddsMF)
+
+#Normalized (variance stabilized transformation), then run PCA
+vsd <- varianceStabilizingTransformation(dds, blind=FALSE)
+PCA<-plotPCA(vsd, intgroup="sampleGroup",returnData=TRUE)
+
+p<- ggplot(PCA, aes(x=PC1, y=PC2, color=group))+
+  geom_point(size=4)+
+  scale_color_manual(values=c("orangered1","springgreen2"))+
+  theme_classic()+
+  ggtitle("PCA: Blocker vs no Blocker, Mature ONLY, downsampled")
+  
+p
+
+```
+
+Even with downsampled counts, still cluster by blocker status/ a/b vs c/d. Makes sense.
+
+#DESeq2 results
+```{r}
+res<- results(dds)
+res<- na.omit(res)
+resOrdered<- res[order(res$padj),]
+nrow(resOrdered[resOrdered$padj<0.05,])
+#18 DE miRNAs
+
+rownames(resOrdered[resOrdered$padj<0.05,])
+
+```
+
+
+Visualizing DE with heatmap:
+```{r}
+rld<- rlog(dds)
+topgenes<- rownames(resOrdered[1:20,])
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+subtractFromMin<- 0
+subtractFromMax<- 1
+lengthOut<- 75
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)))
+```
+
+```{r}
+#Looking at the off targets from this analysis
+sigDE_mature<- resOrdered[resOrdered$padj<0.05,]
+targetfamilies<- c(Alltargets, "hsa-miR-25-3p")
+sigCounts<- SampledCounts[rownames(SampledCounts) %in% rownames(sigDE_mature),]
+sigCounts$Mean<- rowMeans(sigCounts)
+sigCounts$ID<- rownames(sigCounts)
+sigCounts<- sigCounts[order(sigCounts$Mean),]
+sigCounts$TargetFamilies<-rownames(sigCounts) %in% targetfamilies
+sigCounts<- sigCounts[,c(17:19)]
+
+ggplot(sigCounts, aes(x=ID, y=Mean,color=TargetFamilies, fill=TargetFamilies))+
+  geom_bar(stat="identity", position="dodge")+
+  theme_classic()+
+  labs(title = "Mean Raw counts of sig DE miRNAs",
+       subtitle = "")+
+  scale_y_continuous(name="Mean raw counts")+
+  theme(axis.text.x = element_text(angle = 90))
+
+```
+
+
+```{r}
+df<- data.frame(ID=rownames(sigDE_mature), log2=sigDE_mature$log2FoldChange, targetFamilies= rownames(sigDE_mature) %in% targetfamilies)
+
+ggplot(df, aes(x=ID, y=log2,color=targetFamilies, fill=targetFamilies))+
+  geom_bar(stat="identity", position="dodge")+
+  theme_classic()+
+  labs(title = "Log2 fold change of sig DE miRNAs",
+       subtitle = "")+
+  theme(axis.text.x = element_text(angle = 90))+
+  scale_y_continuous(name="log2 fold change")
+```
+
+DEseq2
+```{r}
+counts<- SampledCounts[!(rownames(SampledCounts) %in% ActualTargets),]
+
+#rename rows, removing input info
+colnames(counts)<- c(rep("A.0", 3), rep("B.0", 3), "C.0", "D.0", rep("A.1", 3), rep("B.1", 3), "C.1", "D.1")
+
+#################
+#create metadata#
+#################
+
+#set blocker status
+sampleGroup<- as.factor(c(rep("NoBlocker", 8), rep("Blocker", 8)))
+#this column is used to collapse technical replicates
+sample<- colnames(counts)
+#this column is to control for sample to sample differences
+patient<- as.factor(c(rep("A", 3), rep("B", 3), "C", "D", rep("A", 3), rep("B", 3), "C", "D"))
+meta<- data.frame(sample, sampleGroup, patient)
+
+#create DESeq2 object- just based on samplegroup (blockerstatus), will add samples to model later
+dds<- DESeqDataSetFromMatrix(countData=counts, 
+                             colData=meta, 
+                             design=~sampleGroup)
+
+#Collapse replicates- using internal DESeq2 function
+ddsColl<- collapseReplicates(dds, dds$sample)
+
+#Create model that takes into account sample differences
+ddsMF<- ddsColl
+design(ddsMF)<- formula(~patient + sampleGroup)
+
+#run DESeq2
+dds<- DESeq(ddsMF)
+
+#Normalized (variance stabilized transformation), then run PCA
+vsd <- varianceStabilizingTransformation(dds, blind=FALSE)
+PCA<-plotPCA(vsd, intgroup="sampleGroup",returnData=TRUE)
+
+p<- ggplot(PCA, aes(x=PC1, y=PC2, color=group))+
+  geom_point(size=4)+
+  scale_color_manual(values=c("orangered1","springgreen2"))+
+  theme_classic()+
+  ggtitle("PCA: Blocker vs no Blocker, Mature ONLY, downsampled, targets removed")
+  
+p
+
+```
+
+Even with downsampled counts, still cluster by blocker status/ a/b vs c/d. Makes sense.
+
+#DESeq2 results
+```{r}
+res<- results(dds)
+res<- na.omit(res)
+resOrdered<- res[order(res$padj),]
+nrow(resOrdered[resOrdered$padj<0.05,])
+#16 DE miRNAs
+
+rownames(resOrdered[resOrdered$padj<0.05,])
+
+```
+
+
+Visualizing DE with heatmap:
+```{r}
+rld<- rlog(dds)
+topgenes<- rownames(resOrdered[1:20,])
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+subtractFromMin<- 0
+subtractFromMax<- 1
+lengthOut<- 75
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)))
+```
+
+```{r}
+#Looking at the off targets from this analysis
+sigDE_mature<- resOrdered[resOrdered$padj<0.05,]
+targetfamilies<- c(Alltargets, "hsa-miR-25-3p")
+sigCounts<- SampledCounts[rownames(SampledCounts) %in% rownames(sigDE_mature),]
+sigCounts$Mean<- rowMeans(sigCounts)
+sigCounts$ID<- rownames(sigCounts)
+sigCounts<- sigCounts[order(sigCounts$Mean),]
+sigCounts$TargetFamilies<-rownames(sigCounts) %in% targetfamilies
+sigCounts<- sigCounts[,c(17:19)]
+
+ggplot(sigCounts, aes(x=ID, y=Mean,color=TargetFamilies, fill=TargetFamilies))+
+  geom_bar(stat="identity", position="dodge")+
+  theme_classic()+
+  labs(title = "Mean Raw counts of sig DE miRNAs",
+       subtitle = "")+
+  scale_y_continuous(name="Mean raw counts")+
+  theme(axis.text.x = element_text(angle = 90))
+
+```
+
+```{r}
+df<- data.frame(ID=rownames(sigDE_mature), log2=sigDE_mature$log2FoldChange, targetFamilies= rownames(sigDE_mature) %in% targetfamilies)
+
+ggplot(df, aes(x=ID, y=log2,color=targetFamilies, fill=targetFamilies))+
+  geom_bar(stat="identity", position="dodge")+
+  theme_classic()+
+  labs(title = "Log2 fold change of sig DE miRNAs",
+       subtitle = "")+
+  theme(axis.text.x = element_text(angle = 90))+
+  scale_y_continuous(name="log2 fold change")
+```
+
+
+
+
+#benefits: improved DESeq2. Repeating analysis with downsampled
+
+DESeq2 using A0 vs B0 - here, technical replicates are NOT collapsed
+
+ALSO- PAIRWISE ANALYSIS NOT PERFORMED
+Don't want to control for sample differences here, since we're comparing between samples
+```{r}
+#rename rows, removing input info
+A0_B0<- SampledCounts[,c(1:6)]
+colnames(A0_B0)<- c("A.0.1", "A.0.2", "A.0.3", "B.0.1", "B.0.2", "B.0.3")
+
+#create metadata
+sampleGroup<- c(rep("NoBlocker", 3), rep("Blocker", 3))
+sample<- colnames(A0_B0)
+meta<- data.frame(sample, sampleGroup)
+
+#create DESeq2 object
+dds<- DESeqDataSetFromMatrix(countData=A0_B0, 
+                             colData=meta, 
+                             design=~sampleGroup)
+
+
+dds<- DESeq(dds)
+
+res<- results(dds)
+res<- na.omit(res)
+resOrdered<- res[order(res$padj),]
+nrow(resOrdered[resOrdered$padj<0.05,])
+#41 DE miRNAs
+```
+
+```{r}
+#rename rows, removing input info
+A1_B1<- SampledCounts[,c(9:14)]
+colnames(A0_B0)<- c("A.1.1", "A.1.2", "A.1.3", "B.1.1", "B.1.2", "B.1.3")
+
+#create metadata
+sampleGroup<- c(rep("NoBlocker", 3), rep("Blocker", 3))
+sample<- colnames(A1_B1)
+meta<- data.frame(sample, sampleGroup)
+
+#create DESeq2 object
+dds<- DESeqDataSetFromMatrix(countData=A1_B1, 
+                             colData=meta, 
+                             design=~sampleGroup)
+
+
+dds<- DESeq(dds)
+
+res<- results(dds)
+res<- na.omit(res)
+resOrdered<- res[order(res$padj),]
+nrow(resOrdered[resOrdered$padj<0.05,])
+#73 DE miRNAs
+```

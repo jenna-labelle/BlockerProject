@@ -1,0 +1,144 @@
+---
+title: "Channing Blocker Pilot: Input levels have no effect on miRNA expression"
+output: html_notebook
+---
+
+Import libraries
+```{r}
+suppressPackageStartupMessages(library(DESeq2))
+```
+
+Read in data
+```{r}
+wd<- "//Cifs2/rcdata$/Channing_miRNA_Blocker_Test/"
+countsInput<- read.delim(paste(wd, "TGC_Data/mirna-blocker_bs_mature-isomirs_raw.txt", sep =""))
+rpmInput<- read.delim(paste(wd, "TGC_Data/mirna-blocker_bs_mature-isomirs_rpm.txt", sep =""))
+```
+
+
+#Testing for any differences in expression due to different RNA inputs
+Using rpm data
+
+Use only samples that have varying inputs:
+```{r}
+#select rpm data that has replicated values
+rpm<- rpmInput[,c(1,4,5,6,7,8,9,12,13,14,15,16,17)]
+rownames(rpm)<- rpm$ID
+rpm<- rpm[,-1]
+
+#get rid of any rows that have rowSums<0, just to simplify analysis
+rpm<- rpm[rowSums(rpm)>0,]
+```
+
+```{r}
+#Looking at just Sample A: reformat so that you have 3 columns- Input/Gene/Counts
+Input<- c(rep(190,1648), rep(570,1648), rep(760,1648))
+rpmCounts<- c(rpm$A.190.0, rpm$A.570.0, rpm$A.760.0)
+new<- data.frame(rpmCounts, Input)
+new$IDs<- rep(rownames(rpm),3)
+
+new<- within(new, {
+  IDs<- factor(IDs)
+  Input<- factor(Input)
+})
+
+myData.mean<- aggregate(new$rpmCounts,
+                     by = list(new$IDs, new$Input),
+                     FUN='mean')
+colnames(myData.mean)<- c("ID", "Input", "rpmCounts")
+myData.mean<- myData.mean[order(myData.mean$ID),]
+head(myData.mean)
+```
+
+Running ANOVA test on just sample A- looking at difference in counts, accounting for ID and Input
+```{r}
+stress.aov <- with(myData.mean,
+                   aov(rpmCounts ~ Input +
+                       Error(ID / Input))
+)
+
+summary(stress.aov)
+```
+
+```{r}
+#Sample B.0
+Input<- c(rep(190,1648), rep(570,1648), rep(760,1648))
+rpmCounts<- c(rpm$B.190.0, rpm$B.570.0, rpm$B.760.0)
+new<- data.frame(rpmCounts, Input)
+new$IDs<- rep(rownames(rpm),3)
+
+new<- within(new, {
+  IDs<- factor(IDs)
+  Input<- factor(Input)
+})
+
+myData.mean<- aggregate(new$rpmCounts,
+                     by = list(new$IDs, new$Input),
+                     FUN='mean')
+colnames(myData.mean)<- c("ID", "Input", "rpmCounts")
+myData.mean<- myData.mean[order(myData.mean$ID),]
+stress.aov <- with(myData.mean,
+                   aov(rpmCounts ~ Input +
+                       Error(ID / Input))
+)
+
+summary(stress.aov)
+```
+
+```{r}
+#Here: combining data from all 4 sample types into 1 column, formatted as above, with 1 extra column denoting sample type
+
+#First: subset rpm data to just the top 100 most expressed miRNAs- too large a vector to look at all
+rpm$mean<- rowMeans(rpm)
+rpm<- rpm[order(rpm$mean, decreasing=TRUE),]
+rpm<- rpm[1:100,]
+
+#Sample A.0
+Input<- c(rep("Low",300), rep("Medium",300), rep("High",300))
+rpmCounts<- c(rpm$A.190.0, rpm$A.570.0, rpm$A.760.0)
+forAnova<- data.frame(rpmCounts, Input)
+forAnova$IDs<- rep(rownames(rpm),3)
+forAnova$SampleType<- rep("A.0", 900)
+forAnova_A0<- forAnova
+
+#Sample B.0
+rpmCounts<- c(rpm$B.190.0, rpm$B.570.0, rpm$B.760.0)
+forAnova<- data.frame(rpmCounts, Input)
+forAnova$IDs<- rep(rownames(rpm),3)
+forAnova$SampleType<- rep("B.0", 900)
+forAnova_B0<- forAnova
+
+#Sample A.1
+rpmCounts<- c(rpm$A.380.1, rpm$A.570.1, rpm$A.760.1)
+forAnova<- data.frame(rpmCounts, Input)
+forAnova$IDs<- rep(rownames(rpm),3)
+forAnova$SampleType<- rep("A.1", 900)
+forAnova_A1<- forAnova
+
+#Sample B.1
+rpmCounts<- c(rpm$B.380.1, rpm$B.570.1, rpm$B.760.1)
+forAnova<- data.frame(rpmCounts, Input)
+forAnova$IDs<- rep(rownames(rpm),3)
+forAnova$SampleType<- rep("B.1", 900)
+forAnova_B1<- forAnova
+
+AnovaInput<- rbind(forAnova_A0, forAnova_B0, forAnova_A1, forAnova_B1)
+
+myData.mean<- aggregate(AnovaInput$rpmCounts,
+                     by = list(AnovaInput$Input, AnovaInput$IDs, AnovaInput$SampleType),
+                     FUN='mean')
+colnames(myData.mean)<- c("Input", "ID", "SampleGroup", "rpmCounts")
+myData.mean<- myData.mean[order(myData.mean$ID),]
+head(myData.mean)
+```
+
+```{r}
+Final.aov <- with(myData.mean,
+                   aov(rpmCounts ~ Input +
+                       Error((ID*SampleGroup) / Input))
+)
+summary(Final.aov)
+```
+pvalue = .793
+
+If I've done this correctly- no significant difference, even when looking at all 4 samples together
