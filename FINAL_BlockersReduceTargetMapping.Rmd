@@ -1,0 +1,107 @@
+---
+title: "Effect of blockers on targeted miRNAs and closely related species"
+output: html_notebook
+---
+
+#With addition of blockers, the percent of reads that align to targets decreases
+
+Import libraries
+```{r}
+suppressPackageStartupMessages(library(DESeq2))
+suppressPackageStartupMessages(library(pheatmap))
+suppressPackageStartupMessages(library(viridis))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(reshape2))
+suppressPackageStartupMessages(library(grid))
+suppressPackageStartupMessages(library(gridExtra))
+```
+
+
+Read in data. Data from basespace mirdeep2 analysis (no mismatches allowed for mature, isomirs included) and then downsampled (see Final_DifferentialExpression_BlockerProject.Rmd)
+```{r}
+wd<- "//Cifs2/rcdata$/Channing_miRNA_Blocker_Test/"
+BaseSpaceDownSampled_Counts<- read.csv(paste(wd, "OtherResults/DownSampledCounts_BaseSpaceMatureIsomir_metaseqR_121119.csv", sep =""))
+rownames(BaseSpaceDownSampled_Counts)<- BaseSpaceDownSampled_Counts$X
+BaseSpaceDownSampled_Counts<- BaseSpaceDownSampled_Counts[,-1]
+```
+
+#Percent of reads mapping to targets in samples without blocker vs with blocker: Collapsing technical replicates
+
+First, collapse technical replicates- average counts across technical replicates for A and B samples
+```{r}
+#Get mean of A/B samples (Collapsing technical replicates)
+BS_CollapsedCounts<- BaseSpaceDownSampled_Counts
+BS_CollapsedCounts$A.0_Collapsed<- as.integer(rowMeans(BaseSpaceDownSampled_Counts[,1:3]))
+BS_CollapsedCounts$B.0_Collapsed<- as.integer(rowMeans(BaseSpaceDownSampled_Counts[,4:6]))
+BS_CollapsedCounts$A.1_Collapsed<- as.integer(rowMeans(BaseSpaceDownSampled_Counts[,9:11]))
+BS_CollapsedCounts$B.1_Collapsed<- as.integer(rowMeans(BaseSpaceDownSampled_Counts[,12:14]))
+BS_CollapsedCounts<- BS_CollapsedCounts[,c(17,18,7,8,19,20,15,16)]
+
+colnames(BS_CollapsedCounts)<- c("A.0", "B.0", "C.0", "D.0", "A.1", "B.1", "C.1", "D.1")
+```
+
+
+Next, get number of reads mapping to any of the targets and divide by the total number of reads
+```{r}
+#Get list of all targets (and very closely related miRNAs)
+Target_92<- rownames(BaseSpaceDownSampled_Counts[grep("miR-92", rownames(BaseSpaceDownSampled_Counts))[1:4],])
+Target_451<- rownames(BaseSpaceDownSampled_Counts[grep("miR-451", rownames(BaseSpaceDownSampled_Counts))[1],])
+Target_486<- rownames(BaseSpaceDownSampled_Counts[grep("miR-486", rownames(BaseSpaceDownSampled_Counts)),])
+Target_25<- rownames(BaseSpaceDownSampled_Counts[grep("miR-25", rownames(BaseSpaceDownSampled_Counts)),])
+TargetFamilies<- c(Target_451,Target_486,Target_92, Target_25)
+
+#get total counts for these targets in all samples
+targetCounts<- BS_CollapsedCounts[rownames(BS_CollapsedCounts)%in% TargetFamilies,]
+SumTargetCounts<- colSums(targetCounts)
+
+#Get percentage of total counts that map to targets
+PercentMapToTargets<-as.data.frame(SumTargetCounts/colSums(BS_CollapsedCounts) *100)
+PercentMapToTargets$ID<- rownames(PercentMapToTargets)
+colnames(PercentMapToTargets)<-c("PercentMapToTarget", "ID")
+PercentMapToTargets$BlockerStatus<- c(rep("NoBlocker", 4), rep("Blocker", 4))
+PercentMapToTargets
+```
+
+
+
+Finally, visualize this change for all 4 samples from blocker to no blocker
+```{r}
+ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, color=BlockerStatus, fill=BlockerStatus))+
+  geom_bar(stat="identity", position="dodge")+ 
+  theme_classic()+
+  labs(title = 'Percent of Total Reads that Map to Targets',
+       subtitle = 'Technical Replicates collapsed')
+             
+```
+
+#Repeating the above graph, but with only mature species
+
+Select mature species
+```{r}
+BaseSpace_MatureCounts<- BS_CollapsedCounts[grep("R", rownames(BS_CollapsedCounts)),]
+let7<- BS_CollapsedCounts[grep("let", rownames(BS_CollapsedCounts)),]
+BaseSpace_MatureCounts<- rbind(BaseSpace_MatureCounts, let7)
+BaseSpace_MC<- BaseSpace_MatureCounts
+```
+
+
+```{r}
+#get total counts for these targets in all samples
+targetCounts<- BaseSpace_MC[rownames(BaseSpace_MC)%in% TargetFamilies,]
+SumTargetCounts<- colSums(targetCounts)
+
+#Get percentage of total counts that map to targets
+PercentMapToTargets<-as.data.frame(SumTargetCounts/colSums(BaseSpace_MC) *100)
+PercentMapToTargets$ID<- rownames(PercentMapToTargets)
+colnames(PercentMapToTargets)<-c("PercentMapToTarget", "ID")
+PercentMapToTargets$BlockerStatus<- c(rep("NoBlocker", 4), rep("Blocker", 4))
+PercentMapToTargets
+```
+```{r}
+ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, color=BlockerStatus, fill=BlockerStatus))+
+  geom_bar(stat="identity", position="dodge")+ 
+  theme_classic()+
+  labs(title = 'Percent of Total Reads that Map to Targets',
+       subtitle = 'Technical Replicates collapsed, Only Mature Species')
+```
+
