@@ -39,7 +39,6 @@ count==length(data[[1]]$tracking_id)
 
 #bind all data frames together. NOTE: this assumes that all files have the same genes in the same order! Run the code in the previous section to double check this. Should not normally be an issue.
 m.data<- do.call(cbind, data)
-rownames(m.data)<- m.data$miRNASpecies
 
 #gets rid of unnecessary gene names. Left with just miRNA counts data with miRNA names as row name
 count.data<- m.data[,seq(from=2, to =ncol(m.data), by = 2)]
@@ -50,9 +49,24 @@ colnames(count.data)<- gsub("_", "", colnames(count.data))
 
 #Some (~200) species have more than entry- the different entries are miRDeep2 trying to distinguish to what extent each precurosor is contributing to the mature miRNA. Recommended way of dealing with this is to average the values when there are multiple counts. Doing that below.
 count.data.average<-  as.data.frame(group_by(count.data, miRNA)%>% summarise_at(1:16, mean))
+rownames(count.data.average)<- count.data.average$miRNA
+count.data.average<- count.data.average[,-1]
+
+#Rename and reorder samples- as A/B/C/D rather than 1-16
+key<- read.csv("C:/Users/jjl71/Documents/BlockerProject/BlockerProject/Manifest_BaseSpaceSampleID_SampleID_InputLevel.csv")
+colnames(count.data.average)<- key$SampleGroup.Input
+count.data.average<- count.data.average[,order(colnames(count.data.average))]
 
 
 #write to csv for later use
 write.csv(count.data.average, paste(wd, "miRNA_CLmiRDeep2Results_AllSamples_DefaultmiRDeep2Settings.csv", sep =""))
+```
+
+
+Downsample counts and write to csv
+```{r}
+CL_counts_downsample<- downsample.counts(count.data.average, seed=42)
+write.csv(CL_counts_downsample, paste(wd, "Downsampled_miRNA_CLmiRDeep2Results_AllSamples_DefaultmiRDeep2Settings.csv", sep =""))
+
 ```
 
