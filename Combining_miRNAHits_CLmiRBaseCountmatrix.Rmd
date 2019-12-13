@@ -1,0 +1,58 @@
+---
+title: "Combining_miRNAHits_DownloadedSeparately"
+output: html_notebook
+---
+
+This file takes as input individually downloaded Blocker project miRNA hits (created separately for each sample using miRDeep2 at the command line) and combines them into one file.
+
+
+
+```{r}
+#This function reads in count data for specified file
+ReadCounts<- function (file) {
+  data<- read.csv(paste(wd,file, sep = ''), header = TRUE)
+  data<- data[,c(1,6)]
+  colnames(data)<- c("miRNASpecies", substr(file,1,3))
+  return(data)
+}
+
+```
+
+#For mature hits:
+```{r}
+wd<- "E:/BlockerProject/FinalCounts/"
+#get list of files
+files<- paste("S",1:16, "_miRNAs_expressed_all_samples.csv", sep ='')
+
+#read in all list of files using ReadFPKM
+data<-lapply(files, ReadCounts)
+
+#Double check that the gene names are in the same order for all files. The cbind in the next portion assumes that they are!
+count = 0
+#In the list of dataframes, for data frames 2-16, check that the tracking_id (gene name) matches the tracking_id in the first data frame. 
+for (x in 2:length(data)) {
+  count = count + sum(data[[1]]$tracking_id==data[[x]]$tracking_id)
+}
+#divide by 15- count should be equal to the number of genes
+count<-count/(length(data)-1) 
+count==length(data[[1]]$tracking_id)
+
+#bind all data frames together. NOTE: this assumes that all files have the same genes in the same order! Run the code in the previous section to double check this. Should not normally be an issue.
+m.data<- do.call(cbind, data)
+rownames(m.data)<- m.data$miRNASpecies
+
+#gets rid of unnecessary gene names. Left with just miRNA counts data with miRNA names as row name
+count.data<- m.data[,seq(from=2, to =ncol(m.data), by = 2)]
+count.data$miRNA<- m.data$miRNASpecies
+count.data<- count.data[,c(17,1:16)]
+
+colnames(count.data)<- gsub("_", "", colnames(count.data))
+
+#Some (~200) species have more than entry- the different entries are miRDeep2 trying to distinguish to what extent each precurosor is contributing to the mature miRNA. Recommended way of dealing with this is to average the values when there are multiple counts. Doing that below.
+count.data.average<-  as.data.frame(group_by(count.data, miRNA)%>% summarise_at(1:16, mean))
+
+
+#write to csv for later use
+write.csv(count.data.average, paste(wd, "miRNA_CLmiRDeep2Results_AllSamples_DefaultmiRDeep2Settings.csv", sep =""))
+```
+
