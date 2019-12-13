@@ -105,3 +105,154 @@ ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, color=BlockerStatus,
        subtitle = 'Technical Replicates collapsed, Only Mature Species')
 ```
 
+#Repeating the two above graphs, but not collapsing technical replicates
+
+Mature and Isomirs
+```{r}
+#get total counts for these targets in all samples
+targetCounts<- BaseSpaceDownSampled_Counts[rownames(BaseSpaceDownSampled_Counts)%in% TargetFamilies,]
+SumTargetCounts<- colSums(targetCounts)
+
+#Get percentage of total counts that map to targets
+PercentMapToTargets<-as.data.frame(SumTargetCounts/colSums(BaseSpaceDownSampled_Counts) *100)
+PercentMapToTargets$ID<- rownames(PercentMapToTargets)
+colnames(PercentMapToTargets)<-c("PercentMapToTarget", "ID")
+PercentMapToTargets$BlockerStatus<- c(rep("NoBlocker", 8), rep("Blocker", 8))
+
+#Rename samples to low/medium/high RNA input
+PercentMapToTargets$ID<- c("A_low", "A_medium", "A_high", "B_low", "B_medium", "B_high", "C", "D", "A_low", "A_medium", "A_high","B_low", "B_medium", "B_high", "C", "D" )
+
+#plot
+ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, color=BlockerStatus, fill=BlockerStatus))+
+  geom_bar(stat="identity", position="dodge")+ 
+  theme_classic()+
+  labs(title = 'Percent of Total Reads that Map to Targets',
+       subtitle = 'All samples, Mature and Isomirs')+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+Only mature species:
+```{r}
+#Select Mature
+BaseSpace_MatureCounts<- BaseSpaceDownSampled_Counts[grep("R", rownames(BaseSpaceDownSampled_Counts)),]
+let7<- BaseSpaceDownSampled_Counts[grep("let", rownames(BaseSpaceDownSampled_Counts)),]
+BaseSpace_MatureCounts<- rbind(BaseSpace_MatureCounts, let7)
+BaseSpace_MC<- BaseSpace_MatureCounts
+
+#get total counts for these targets in all samples
+targetCounts<- BaseSpace_MC[rownames(BaseSpace_MC)%in% TargetFamilies,]
+SumTargetCounts<- colSums(targetCounts)
+
+#Get percentage of total counts that map to targets
+PercentMapToTargets<-as.data.frame(SumTargetCounts/colSums(BaseSpace_MC) *100)
+PercentMapToTargets$ID<- rownames(PercentMapToTargets)
+colnames(PercentMapToTargets)<-c("PercentMapToTarget", "ID")
+PercentMapToTargets$BlockerStatus<- c(rep("NoBlocker", 8), rep("Blocker", 8))
+PercentMapToTargets
+
+#Rename samples to low/medium/high RNA input
+PercentMapToTargets$ID<- c("A_low", "A_medium", "A_high", "B_low", "B_medium", "B_high", "C", "D", "A_low", "A_medium", "A_high","B_low", "B_medium", "B_high", "C", "D" )
+
+#plot
+ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, color=BlockerStatus, fill=BlockerStatus))+
+  geom_bar(stat="identity", position="dodge")+ 
+  theme_classic()+
+  labs(title = 'Percent of Total Reads that Map to Targets',
+       subtitle = 'All samples, Only Mature Species')+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+#Expression levels broken down by each individual target
+
+mature only --> Get reads mapped to each of the three targets in blocked vs unblocked
+
+```{r}
+#Select mature from collapsed data set
+BaseSpace_MatureCounts<- BS_CollapsedCounts[grep("R", rownames(BS_CollapsedCounts)),]
+let7<- BS_CollapsedCounts[grep("let", rownames(BS_CollapsedCounts)),]
+BaseSpace_MatureCounts<- rbind(BaseSpace_MatureCounts, let7)
+BaseSpace_MC<- BaseSpace_MatureCounts
+
+#get number of reads mapping to 3 targets
+mir451<- BaseSpace_MC[rownames(BaseSpace_MC) == "hsa-miR-451a",]
+mir486<- BaseSpace_MC[rownames(BaseSpace_MC) == "hsa-miR-486-5p",]
+mir92<- BaseSpace_MC[rownames(BaseSpace_MC) == "hsa-miR-92a-3p",]
+
+
+#Get percentage of total counts that map to 3 targets. Add column for target information
+PercentMapToTargets_451<-as.data.frame(t(as.data.frame(mir451/colSums(BaseSpace_MC) *100)))
+PercentMapToTargets_451$species<- "hsa-miR-451a"
+colnames(PercentMapToTargets_451)<- c("PercentMap", "species")
+PercentMapToTargets_486<-as.data.frame(t(as.data.frame(mir486/colSums(BaseSpace_MC) *100)))
+PercentMapToTargets_486$species<- "hsa-miR-486-5p"
+colnames(PercentMapToTargets_486)<- c("PercentMap", "species")
+PercentMapToTargets_92<-as.data.frame(t(as.data.frame(mir92/colSums(BaseSpace_MC) *100)))
+PercentMapToTargets_92$species<- "hsa-miR-92a-3p"
+colnames(PercentMapToTargets_92)<- c("PercentMap", "species")
+
+#Combine 3 target dfs into one
+PercentMapToTargets<- rbind(PercentMapToTargets_451,PercentMapToTargets_486,PercentMapToTargets_92)
+PercentMapToTargets$ID<- c("A_low", "A_medium", "A_high", "B_low", "B_medium", "B_high", "C", "D", "A_low", "A_medium", "A_high","B_low", "B_medium", "B_high", "C", "D" )
+colnames(PercentMapToTargets)<-c("PercentMapToTarget", "ID")
+PercentMapToTargets$BlockerStatus<- c(rep("NoBlocker", 8), rep("Blocker", 8))
+
+#plot
+ggplot(PercentMapToTargets, aes(y=PercentMap, x=ID, color=BlockerStatus, fill=BlockerStatus))+
+  geom_bar(stat="identity", position="dodge")+ 
+  theme_classic()+
+  labs(title = 'Percent of Total Reads that Map to Targets',
+       subtitle = 'All samples, Only Mature Species')+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  facet_wrap(~species,nrow=1)
+```
+
+Overall: mir-486 is blocked very well, mir-92 is blocked pretty well, and mir-451a is hardly even expressed
+
+However- this is for the mature species only. Blockers could also be affecting isomirs
+
+Repeating the above graph, but including isomirs:
+
+```{r}
+#get number of reads mapping to 3 targets
+mir451_Both<- BaseSpaceDownSampled_Counts[rownames(BaseSpaceDownSampled_Counts) %in% c("hsa-miR-451a", "hsa-mir-451a"),]
+mir451<- as.data.frame(colSums(mir451_Both))
+
+mir486_Both<- BaseSpaceDownSampled_Counts[rownames(BaseSpaceDownSampled_Counts) %in% c("hsa-miR-486-5p", "hsa-mir-486-1","hsa-mir-486-2"),]
+mir486<- as.data.frame(colSums(mir486_Both))
+
+mir92_Both<- BaseSpaceDownSampled_Counts[rownames(BaseSpaceDownSampled_Counts) %in% c("hsa-miR-92a-3p", "hsa-mir-92a-1","hsa-mir-92a-2"),]
+mir92<- as.data.frame(colSums(mir92_Both))
+
+
+#Get percentage of total counts that map to 3 targets. Add column for target information
+PercentMapToTargets_451<-as.data.frame(mir451/colSums(BaseSpaceDownSampled_Counts) *100)
+PercentMapToTargets_451$species<- "hsa-miR-451a"
+colnames(PercentMapToTargets_451)<- c("PercentMap", "species")
+PercentMapToTargets_486<-as.data.frame(mir486/colSums(BaseSpaceDownSampled_Counts) *100)
+PercentMapToTargets_486$species<- "hsa-miR-486-5p"
+colnames(PercentMapToTargets_486)<- c("PercentMap", "species")
+PercentMapToTargets_92<-as.data.frame(mir92/colSums(BaseSpaceDownSampled_Counts) *100)
+PercentMapToTargets_92$species<- "hsa-miR-92a-3p"
+colnames(PercentMapToTargets_92)<- c("PercentMap", "species")
+
+#Combine 3 target dfs into one
+PercentMapToTargets<- rbind(PercentMapToTargets_451,PercentMapToTargets_486,PercentMapToTargets_92)
+PercentMapToTargets$ID<- c("A_low", "A_medium", "A_high", "B_low", "B_medium", "B_high", "C", "D", "A_low", "A_medium", "A_high","B_low", "B_medium", "B_high", "C", "D" )
+colnames(PercentMapToTargets)<-c("PercentMap","species", "ID")
+PercentMapToTargets$BlockerStatus<- c(rep("NoBlocker", 8), rep("Blocker", 8))
+
+#plot
+ggplot(PercentMapToTargets, aes(y=PercentMap, x=ID, color=BlockerStatus, fill=BlockerStatus))+
+  geom_bar(stat="identity", position="dodge")+ 
+  theme_classic()+
+  labs(title = 'Percent of Total Reads that Map to Targets',
+       subtitle = 'All samples, Only Mature + Isomirs')+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  facet_wrap(~species,nrow=1)
+```
+
+Blockers don't seem to be quite so effective on isomirs as they are on mature, but we still see a large drop in target reads with the use of blockers. 
+
+Can also see here tha mir-451a is expressed- it's just only expressed as an isomir primarily. "Isomir" for this dataset, however, can mean a single nucleotide change, even at the very end of the sequence.
