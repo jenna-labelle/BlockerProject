@@ -1,0 +1,142 @@
+---
+title: "Improvements with blockers: passing thresholds, impact on variation "
+output: html_notebook
+---
+
+Import libraries
+```{r}
+suppressPackageStartupMessages(library(reshape2))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(DESeq2))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(metaseqR))
+```
+
+
+#Examine potential improvements to sensitivity/variability with the use of blockers
+
+First:
+
+How many species pass a certain count threshold in blocked vs unblocked samples?
+
+Import and reformat data:
+```{r}
+#Import
+wd<- "C:/Users/jjl71/Documents/BlockerProject/BlockerProject/"
+CL_countsInput_Downsampled<- read.csv(paste(wd, "RawData/Downsampled_miRNA_CLmiRDeep2Results_AllSamples_DefaultmiRDeep2Settings.csv",sep=""))
+
+#Reformat
+rownames(CL_countsInput_Downsampled)<-CL_countsInput_Downsampled$X
+CL_countsInput_Downsampled<- CL_countsInput_Downsampled[,-1]
+
+#Reorder 
+CL_countsInput_Downsampled<- CL_countsInput_Downsampled[,c(1,3,5,7,9,11,13,15,2,4,6,8,10,12,14,16)]
+
+#Convert to integer (removes decimal places)
+CL_countsInput_Downsampled_Integer<- as.data.frame(lapply(CL_countsInput_Downsampled, as.integer))
+rownames(CL_countsInput_Downsampled_Integer)<- rownames(CL_countsInput_Downsampled)
+CL_Downsampled<- CL_countsInput_Downsampled_Integer
+```
+
+```{r}
+#Collapse technical replicates (by just taking mean of counts)
+unblockedCounts<- as.data.frame(CL_Downsampled[,1:8])
+unblockedCounts$ACollapsed<- rowMeans(unblockedCounts[,1:3])
+unblockedCounts$BCollapsed<- rowMeans(unblockedCounts[,4:6])
+unblockedCounts<-unblockedCounts[,c(9,10,7,8)]
+
+#get mean counts across all 4 samples
+unblockedCountsMeans<- as.data.frame((rowMeans(unblockedCounts)))
+
+#number that pass thresholds:
+unblockedPassThresholds<- data.frame(threshold=c(1,5,10,50,100,500), countsPassingThreshold=c(sum(unblockedCountsMeans>1),sum(unblockedCountsMeans>5),sum(unblockedCountsMeans>10),sum(unblockedCountsMeans>50),sum(unblockedCountsMeans>100),sum(unblockedCountsMeans>500)))
+
+#blocked: collapse technical replicates (by just taking mean of counts)
+blockedCounts<- as.data.frame(CL_Downsampled[,9:16])
+blockedCounts$ACollapsed<- rowMeans(blockedCounts[,1:3])
+blockedCounts$BCollapsed<- rowMeans(blockedCounts[,4:6])
+blockedCounts<-blockedCounts[,c(9,10,7,8)]
+
+#get mean counts across all 4 samples
+blockedCountsMeans<- as.data.frame((rowMeans(blockedCounts)))
+
+#number that pass thresholds:
+blockedPassThresholds<- data.frame(threshold=c(1,5,10,50,100,500), countsPassingThreshold=c(sum(blockedCountsMeans>1),sum(blockedCountsMeans>5),sum(blockedCountsMeans>10),sum(blockedCountsMeans>50),sum(blockedCountsMeans>100),sum(blockedCountsMeans>500)))
+
+#combine into one, adding in an extra column for blocker status
+unblockedPassThresholds$status<- rep("unblocked",6)
+blockedPassThresholds$status<- rep("blocked",6)
+passThreshold<-rbind(unblockedPassThresholds,blockedPassThresholds)
+
+#plot
+p<- ggplot(passThreshold, aes(x=threshold, y=countsPassingThreshold, color=status))+
+             geom_line(size=2)+
+  geom_point(size=4)+
+  scale_color_manual(values=c("black", "red"))+
+  ggtitle("Number of miRNAs passing a count threshold")+
+  theme_classic()
+p
+```
+
+#doing the above, but not taking the mean. still collapse technical, but keep a/b/c/d info. Add in a 4th column in the final table with sample type. Then subtract the #passing threshold for a/b/c/d individually from blocker vs no blocker, then graph. 
+
+whoowhweeee
+
+```{r}
+#write (awful) function that takes a column of counts and returns the number of species that pass the 6 threshold already written into the function, bc i am stupid
+CountsPassingThreshold<- function(counts){
+  return(c(sum(counts>1),sum(counts>5),sum(counts>10),sum(counts>50),sum(counts>100),sum(counts>500),sum(counts>1000)))
+}
+
+#Get counts passing threshold for unblocked samples, then transform data- 4 columns: ID (A/b/c/d), threshold, #of species that passed that threshold, and blocker status
+unblockedPassThreshold<- as.data.frame(apply(unblockedCounts, 2, CountsPassingThreshold))
+rownames(unblockedPassThreshold)<- c(1,5,10,50,100,500,1000)
+colnames(unblockedPassThreshold)<- c("A", "B", "C", "D")
+#add 4th column: mean of all samples
+unblockedPassThreshold$Mean<- rowMeans(unblockedPassThreshold)
+unblockedPassThreshold<- as.data.frame(t(unblockedPassThreshold))
+unblockedPassThreshold$ID<- rownames(unblockedPassThreshold)
+#reformat- melt
+unblockedPassThreshold<- melt(unblockedPassThreshold)
+colnames(unblockedPassThreshold)<- c("ID", "threshold","speciesPassingThreshold")
+unblockedPassThreshold$status<- rep("unblocked", 35)
+unblockedPassThreshold$threshold<- as.integer(as.character((unblockedPassThreshold$threshold)))
+
+#Get counts passing threshold for blocked samples, then transform data- 4 columns: ID (A/b/c/d), threshold, #of species that passed that threshold, and blocker status
+blockedPassThreshold<- as.data.frame(apply(blockedCounts, 2, CountsPassingThreshold))
+rownames(blockedPassThreshold)<- c(1,5,10,50,100,500,1000)
+colnames(blockedPassThreshold)<- c("A", "B", "C", "D")
+#add 4th column: mean of all samples
+blockedPassThreshold$Mean<- rowMeans(blockedPassThreshold)
+blockedPassThreshold<- as.data.frame(t(blockedPassThreshold))
+blockedPassThreshold$ID<- rownames(blockedPassThreshold)
+#reformat- melt
+blockedPassThreshold<- melt(blockedPassThreshold)
+colnames(blockedPassThreshold)<- c("ID", "threshold","speciesPassingThreshold")
+blockedPassThreshold$status<- rep("blocked", 35)
+blockedPassThreshold$threshold<- as.integer(as.character((blockedPassThreshold$threshold)))
+
+#combine into one
+passThreshold<-rbind(unblockedPassThreshold,blockedPassThreshold)
+
+#reformat so that you have 4 columns: ID, threshold, #species passing in noblocker, #species passing in blocker
+PT<-data.frame(passThreshold$ID[1:35], passThreshold$threshold[1:35],passThreshold$speciesPassingThreshold[1:35], passThreshold$speciesPassingThreshold[36:70])
+colnames(PT)<- c("ID", "threshold", "SpeciesPT_noblocker", "SpeciesPT_blocker")
+
+#now need to subtract each- i.e., sample A at threshold 1 with no blocker vs with blocker. get those values for all, then plot. 
+df<- as_tibble(PT)
+df<-df%>% group_by(ID) %>% mutate(BlockerMinusNoBlocker=SpeciesPT_blocker-SpeciesPT_noblocker)
+df<- as.data.frame(df)
+
+#plot
+p<- ggplot(df, aes(x=threshold, y=BlockerMinusNoBlocker, color=ID))+
+             geom_line(size=1)+
+  geom_point(size=2)+
+  scale_color_manual(values=c("turquoise2", "deeppink1", "goldenrod1", "darkviolet","black"))+
+  ggtitle("Number of miRNAs passing a count threshold")+
+  theme_classic()
+p
+
+```
+
+
