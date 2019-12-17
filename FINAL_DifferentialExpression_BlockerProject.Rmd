@@ -131,22 +131,28 @@ Visualize sample differences using PCA
 
 Note: this function uses the dds object, but no information on sample group is input into the analysis (i.e., unsupervised clustering)
 ```{r}
+#Need to detach DESeq (need to use DESeq2)- used for metaseqR
+detach("package:metaseqR")
+detach("package:DESeq")
+```
+
+```{r}
 #Normalized (variance stabilized transformation), then run PCA
-vsd <- varianceStabilizingTransformation(ddsMF, blind=FALSE)
+vsd <- varianceStabilizingTransformation(ddsMF, blind=TRUE)
 PCA<-plotPCA(vsd, intgroup="sampleGroup",returnData=TRUE)
 
 p<- ggplot(PCA, aes(x=PC1, y=PC2, color=group))+
   geom_point(size=4)+
   scale_color_manual(values=c("orangered1","springgreen2"))+
   theme_classic()+
-  ylim(-12,12)+
+  ylim(-20,20)+
   ggtitle("PCA: Blocker vs no Blocker, Mature + Isomirs")+
   geom_text(aes(label=name),hjust=.5, vjust=-1.2, color="black")
   
 p
 ```
 
-Samples do cluster by blocker status as we would expect, but they also cluster strongly by sample type- A/B are more similar to one another than C/D. 
+Samples cluster primarily by sample type, not blocker status
 
 Is there any possibility this is due to collapsing of technical replicates? If we didn't collapse technical replicates, would we see all 3 A.1/3 B.1, etc still all clustering together?
 Testing this..
@@ -178,21 +184,21 @@ design(ddsMF_TNC)<- formula(~patient + sampleGroup)
 dds_TNC<- DESeq(ddsMF_TNC)
 
 #Normalized (variance stabilized transformation), then run PCA
-vsd_TNC <- varianceStabilizingTransformation(ddsMF_TNC, blind=FALSE)
+vsd_TNC <- varianceStabilizingTransformation(ddsMF_TNC, blind=TRUE)
 PCA_TNC<-plotPCA(vsd_TNC, intgroup="sampleGroup",returnData=TRUE)
 
 p<- ggplot(PCA_TNC, aes(x=PC1, y=PC2, color=group))+
   geom_point(size=4)+
   scale_color_manual(values=c("orangered1","springgreen2"))+
   theme_classic()+
-  ylim(-15,15)+
+  ylim(-20,20)+
   ggtitle("PCA: Blocker vs no Blocker, Technical Replicates not Collapsed: Mature + Isomirs")+
   geom_text(aes(label=name),hjust=.5, vjust=-1.2, color="black")
   
 p
 
 ```
-So the answer to that question is yes- samples still cluster in a similar pattern, even if you don't collapse by technical replicates. A/B and C/D really are more similar to one another.
+So the answer to that question is yes- samples still cluster in a similar pattern, even if you don't collapse by technical replicates.
 
 
 #Back to using the dds object with technical replicates collapsed:
@@ -232,7 +238,9 @@ mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=
 metadata<- data.frame(Sample_Group=PCA$sampleGroup, row.names=PCA$name)
 
 #plot heatmap
-pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)),show_rownames = FALSE, annotation_col = metadata, border_color= NA)
+p<-pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)),show_rownames = FALSE, annotation_col = metadata, border_color= NA)
+
+p
 ```
 
 Blocked/unblocked samples cluster together, as expected. Samples A/B and C/D also cluster together, as seen in the PCA results
@@ -315,7 +323,7 @@ dds<- DESeq(ddsMF)
 Visualize sample differences using PCA
 ```{r}
 #Normalized (variance stabilized transformation), then run PCA
-vsd <- varianceStabilizingTransformation(ddsMF, blind=FALSE)
+vsd <- varianceStabilizingTransformation(ddsMF, blind=TRUE)
 PCA<-plotPCA(vsd, intgroup="sampleGroup",returnData=TRUE)
 
 p<- ggplot(PCA, aes(x=PC1, y=PC2, color=group))+
@@ -329,7 +337,7 @@ p<- ggplot(PCA, aes(x=PC1, y=PC2, color=group))+
 p
 ```
 
-As with mature/isomir data, sample still cluster by blocker status and sample type in similar clustering pattern
+As with mature/isomir data, sample still cluster by sample type in similar clustering pattern
 
 
 Differential expression results:
@@ -368,7 +376,9 @@ mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=
 metadata<- data.frame(Sample_Group=PCA$sampleGroup, row.names=PCA$name)
 
 #plot heatmap
-pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)),show_rownames = FALSE, annotation_col = metadata, border_color= NA)
+p<-pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)),show_rownames = FALSE, annotation_col = metadata, border_color= NA)
+
+p
 ```
 Samples still cluster by blocker status and sample type, like the mature/isomir dataset. Note: if you increase the number of species plotted here, you no longer see samples clustering by blocker status. This is likely not a concern, since only a dozen or so species are actually sig DE
 
@@ -418,14 +428,14 @@ dds<- DESeq(ddsMF)
 Visualize sample differences using PCA
 ```{r}
 #Normalized (variance stabilized transformation), then run PCA
-vsd <- varianceStabilizingTransformation(ddsMF, blind=FALSE)
+vsd <- varianceStabilizingTransformation(ddsMF, blind=TRUE)
 PCA<-plotPCA(vsd, intgroup="sampleGroup",returnData=TRUE)
 
 p<- ggplot(PCA, aes(x=PC1, y=PC2, color=group))+
   geom_point(size=4)+
   scale_color_manual(values=c("orangered1","springgreen2"))+
   theme_classic()+
-  ylim(-12,12)+
+  ylim(-12,15)+
   ggtitle("PCA: Blocker vs no Blocker, Mature Only, Actual Targets Removed")+
   geom_text(aes(label=name),hjust=.5, vjust=-1.2, color="black")
   
@@ -465,7 +475,8 @@ mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=
 metadata<- data.frame(Sample_Group=PCA$sampleGroup, row.names=PCA$name)
 
 #plot heatmap
-pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)),show_rownames = FALSE, annotation_col = metadata, border_color= NA)
+p<-pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)),show_rownames = FALSE, annotation_col = metadata, border_color= NA)
+p
 ```
 
 In heatmap of DE results, samples cluster by SAMPLE and not BLOCKER STATUS, as we would expect if there are no huge off target effects caused by the blockers. 
@@ -517,14 +528,14 @@ dds<- DESeq(ddsMF)
 #Visualize sample differences using PCA
 
 #Normalized (variance stabilized transformation), then run PCA
-vsd <- varianceStabilizingTransformation(ddsMF, blind=FALSE)
+vsd <- varianceStabilizingTransformation(ddsMF, blind=TRUE)
 PCA<-plotPCA(vsd, intgroup="sampleGroup",returnData=TRUE)
 
 p<- ggplot(PCA, aes(x=PC1, y=PC2, color=group))+
   geom_point(size=4)+
   scale_color_manual(values=c("orangered1","springgreen2"))+
   theme_classic()+
-  ylim(-12,12)+
+  ylim(-12,15)+
   ggtitle("PCA: Blocker vs no Blocker, Mature Only, Targets + Target Families removed")+
   geom_text(aes(label=name),hjust=.5, vjust=-1.2, color="black")
   
@@ -563,7 +574,7 @@ mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=
 metadata<- data.frame(Sample_Group=PCA$sampleGroup, row.names=PCA$name)
 
 #plot heatmap
-pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)),show_rownames = FALSE, annotation_col = metadata, border_color= NA)
+p<-pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)),show_rownames = FALSE, annotation_col = metadata, border_color= NA)
 ```
 
 Samples still cluster by sample type, not blocker status!
