@@ -108,14 +108,14 @@ Visualize sample differences using PCA
 Note: this function uses the dds object, but no information on sample group is input into the analysis (i.e., unsupervised clustering)
 ```{r}
 #Normalized (variance stabilized transformation), then run PCA
-vsd <- varianceStabilizingTransformation(ddsMF, blind=FALSE)
+vsd <- varianceStabilizingTransformation(ddsMF, blind=TRUE)
 PCA<-plotPCA(vsd, intgroup="sampleGroup",returnData=TRUE)
 
 p<- ggplot(PCA, aes(x=PC1, y=PC2, color=group))+
   geom_point(size=4)+
   scale_color_manual(values=c("orangered1","springgreen2"))+
   theme_classic()+
-  ylim(-12,12)+
+  ylim(-15,15)+
   ggtitle("PCA: Blocker vs no Blocker, Mature")+
   geom_text(aes(label=name),hjust=.5, vjust=-1.2, color="black")
   
@@ -154,14 +154,14 @@ design(ddsMF_TNC)<- formula(~patient + sampleGroup)
 dds_TNC<- DESeq(ddsMF_TNC)
 
 #Normalized (variance stabilized transformation), then run PCA
-vsd_TNC <- varianceStabilizingTransformation(ddsMF_TNC, blind=FALSE)
+vsd_TNC <- varianceStabilizingTransformation(ddsMF_TNC, blind=TRUE)
 PCA_TNC<-plotPCA(vsd_TNC, intgroup="sampleGroup",returnData=TRUE)
 
 p<- ggplot(PCA_TNC, aes(x=PC1, y=PC2, color=group))+
   geom_point(size=4)+
   scale_color_manual(values=c("orangered1","springgreen2"))+
   theme_classic()+
-  ylim(-15,15)+
+  ylim(-20,25)+
   ggtitle("PCA: Blocker vs no Blocker, Technical Replicates not Collapsed: Mature + Isomirs")+
   geom_text(aes(label=name),hjust=.5, vjust=-1.2, color="black")
   
@@ -270,14 +270,14 @@ dds<- DESeq(ddsMF)
 Visualize sample differences using PCA
 ```{r}
 #Normalized (variance stabilized transformation), then run PCA
-vsd <- varianceStabilizingTransformation(ddsMF, blind=FALSE)
+vsd <- varianceStabilizingTransformation(ddsMF, blind=TRUE)
 PCA<-plotPCA(vsd, intgroup="sampleGroup",returnData=TRUE)
 
 p<- ggplot(PCA, aes(x=PC1, y=PC2, color=group))+
   geom_point(size=4)+
   scale_color_manual(values=c("orangered1","springgreen2"))+
   theme_classic()+
-  ylim(-12,12)+
+  ylim(-15,15)+
   ggtitle("PCA: Blocker vs no Blocker, Mature Only, Actual Targets Removed")+
   geom_text(aes(label=name),hjust=.5, vjust=-1.2, color="black")
   
@@ -368,14 +368,14 @@ dds<- DESeq(ddsMF)
 #Visualize sample differences using PCA
 
 #Normalized (variance stabilized transformation), then run PCA
-vsd <- varianceStabilizingTransformation(ddsMF, blind=FALSE)
+vsd <- varianceStabilizingTransformation(ddsMF, blind=TRUE)
 PCA<-plotPCA(vsd, intgroup="sampleGroup",returnData=TRUE)
 
 p<- ggplot(PCA, aes(x=PC1, y=PC2, color=group))+
   geom_point(size=4)+
   scale_color_manual(values=c("orangered1","springgreen2"))+
   theme_classic()+
-  ylim(-12,12)+
+  ylim(-15,15)+
   ggtitle("PCA: Blocker vs no Blocker, Mature Only, Targets + Target Families removed")+
   geom_text(aes(label=name),hjust=.5, vjust=-1.2, color="black")
   
