@@ -1,5 +1,5 @@
 ---
-title: "Improvements with blockers: passing thresholds, impact on variation "
+title: "Improvements with blockers: passing thresholds "
 output: html_notebook
 ---
 
@@ -13,11 +13,10 @@ suppressPackageStartupMessages(library(metaseqR))
 ```
 
 
-#Examine potential improvements to sensitivity/variability with the use of blockers
+#Examine potential improvements to sensitivity with the use of blockers
 
-First:
 
-How many species pass a certain count threshold in blocked vs unblocked samples?
+Main question: How many species pass a certain count threshold in blocked vs unblocked samples?
 
 Import and reformat data:
 ```{r}
@@ -80,7 +79,6 @@ p
 
 #doing the above, but not taking the mean. still collapse technical, but keep a/b/c/d info. Add in a 4th column in the final table with sample type. Then subtract the #passing threshold for a/b/c/d individually from blocker vs no blocker, then graph. 
 
-whoowhweeee
 
 ```{r}
 #write (awful) function that takes a column of counts and returns the number of species that pass the 6 threshold already written into the function, bc i am stupid
@@ -127,16 +125,22 @@ colnames(PT)<- c("ID", "threshold", "SpeciesPT_noblocker", "SpeciesPT_blocker")
 df<- as_tibble(PT)
 df<-df%>% group_by(ID) %>% mutate(BlockerMinusNoBlocker=SpeciesPT_blocker-SpeciesPT_noblocker)
 df<- as.data.frame(df)
+df$Mean<- rep(c(rep("Sample",4),"Mean"),7)
 
 #plot
 p<- ggplot(df, aes(x=threshold, y=BlockerMinusNoBlocker, color=ID))+
-             geom_line(size=1)+
+  geom_line(aes(linetype = Mean), size=1.5, show.legend=FALSE)+
   geom_point(size=2)+
-  scale_color_manual(values=c("turquoise2", "deeppink1", "goldenrod1", "darkviolet","black"))+
+  scale_y_continuous(breaks=seq(0, 1000, 50))+
+  scale_color_manual(values=c("turquoise2", "blue4", "dodgerblue", "lightskyblue","black"))+
   ggtitle("Number of miRNAs passing a count threshold")+
   theme_classic()
 p
 
 ```
+*Might want to think of an alternative way of visualizing this
+
+
+
 
 
