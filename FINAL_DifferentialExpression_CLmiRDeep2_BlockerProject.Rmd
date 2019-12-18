@@ -106,6 +106,13 @@ dds<- DESeq(ddsMF)
 Visualize sample differences using PCA
 
 Note: this function uses the dds object, but no information on sample group is input into the analysis (i.e., unsupervised clustering)
+
+```{r}
+#Need to detach DESeq (need to use DESeq2)- used for metaseqR
+detach("package:metaseqR")
+detach("package:DESeq")
+```
+
 ```{r}
 #Normalized (variance stabilized transformation), then run PCA
 vsd <- varianceStabilizingTransformation(ddsMF, blind=TRUE)
@@ -162,7 +169,7 @@ p<- ggplot(PCA_TNC, aes(x=PC1, y=PC2, color=group))+
   scale_color_manual(values=c("orangered1","springgreen2"))+
   theme_classic()+
   ylim(-20,25)+
-  ggtitle("PCA: Blocker vs no Blocker, Technical Replicates not Collapsed: Mature + Isomirs")+
+  ggtitle("PCA: Blocker vs no Blocker, Technical Replicates not Collapsed")+
   geom_text(aes(label=name),hjust=.5, vjust=-1.2, color="black")
   
 p
@@ -190,6 +197,10 @@ CL_DESeq2Results<-resOrdered
 rownames(resOrdered[resOrdered$padj<0.01,])
 ```
 
+```{r}
+#Save off targets for later analysis
+PotentialOffTargets<- resOrdered[resOrdered$padj<0.05,]
+```
 
 Visualize DE results with heatmap:
 ```{r}
@@ -211,7 +222,7 @@ mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=
 metadata<- data.frame(Sample_Group=PCA$sampleGroup, row.names=PCA$name)
 
 #plot heatmap
-pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)),show_rownames = FALSE, annotation_col = metadata, border_color= NA)
+p<-pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)),show_rownames = FALSE, annotation_col = metadata, border_color= NA)
 ```
 
 Blocked/unblocked samples cluster together, as expected. Samples A/B and C/D also cluster together, as seen in the PCA results
@@ -303,7 +314,7 @@ rownames(resOrdered[resOrdered$padj<0.05,])
 rld<- rlog(dds)
 
 #Select top sig DE miRNAs- fewer here than for mature/isomir analysis because there are a lot fewer sig DE miRNAs
-topgenes<- rownames(resOrdered[1:75,])
+topgenes<- rownames(resOrdered[1:379,])
 mat<- assay(rld)[topgenes,]
 mat<- mat - rowMeans(mat)
 
@@ -317,7 +328,7 @@ mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=
 metadata<- data.frame(Sample_Group=PCA$sampleGroup, row.names=PCA$name)
 
 #plot heatmap
-pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)),show_rownames = FALSE,  border_color= NA,annotation_col = metadata)
+p<-pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)),show_rownames = FALSE,  border_color= NA,annotation_col = metadata)
 ```
 
 In heatmap of DE results, for A/B, samples cluster by SAMPLE and not BLOCKER STATUS, as we would expect if there are no huge off target effects caused by the blockers. However- C/D still cluster by blocker status. Will look at removing targets+target families, next, see if C/D still cluster by blocker status
@@ -336,8 +347,8 @@ write.csv(resOrdered, paste(wd, "DESeq2Results/DESeq2Results_ActualTargetsRemove
 
 Select all species with 92, 451, or 486 in name. Also select 2 hsa-mir-25 species (same family as 92a)
 ```{r}
-Target_92<- rownames(CL_AT[grep("miR-92", rownames(CL_AT))[1:4],])
-Target_451<- rownames(CL_AT[grep("miR-451", rownames(CL_AT))[1],])
+Target_92<- rownames(CL_AT[grep("miR-92", rownames(CL_AT))[5:8],])
+Target_451<- rownames(CL_AT[grep("miR-451", rownames(CL_AT))[11],])
 Target_486<- rownames(CL_AT[grep("miR-486", rownames(CL_AT)),])
 Target_25<- rownames(CL_AT[grep("miR-25", rownames(CL_AT)),])
 TargetFamilies<- c(Target_451,Target_486,Target_92, Target_25)
@@ -391,8 +402,8 @@ res<- na.omit(res)
 resOrdered<- res[order(res$padj),]
 nrow(resOrdered[resOrdered$padj<0.05,])
 nrow(resOrdered[resOrdered$padj<0.01,])
-#29 DE miRNAs- padj <0.05
-#20 DE miRNAs- padj <0.01
+#27 DE miRNAs- padj <0.05
+#19 DE miRNAs- padj <0.01
 
 rownames(resOrdered[resOrdered$padj<0.05,])
 
@@ -400,7 +411,7 @@ rownames(resOrdered[resOrdered$padj<0.05,])
 #rld<- rlog(dds)
 
 #Select top 25 sig DE miRNAs- fewer here than for mature/isomir analysis because there are a lot fewer sig DE miRNAs
-topgenes<- rownames(resOrdered[1:50,])
+topgenes<- rownames(resOrdered[1:20,])
 mat<- assay(rld)[topgenes,]
 mat<- mat - rowMeans(mat)
 
@@ -414,7 +425,7 @@ mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=
 metadata<- data.frame(Sample_Group=PCA$sampleGroup, row.names=PCA$name)
 
 #plot heatmap
-pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)),show_rownames = FALSE, annotation_col = metadata, border_color= NA)
+p<-pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)),show_rownames = FALSE, annotation_col = metadata, border_color= NA)
 ```
 
 Samples cluster fully by sample type, not blocker status!
@@ -435,7 +446,7 @@ write.csv(resOrdered, paste(wd, "DESeq2Results/DESeq2Results_ActualTargets+Famil
 
 #Graphing results in a different way: Log of CPM for each miRNA, comparing blocked vs unblocked values
 
-For coloring sig/not sig expressed species, using BaseSpace mature downsampled counts- isomirs not included
+For coloring sig/not sig expressed species, using CL mature downsampled counts- isomirs not included
 
 ```{r}
 #calculating CPM
@@ -561,6 +572,7 @@ pMean
 Putting A-D together on one plot:
 ```{r}
 grid.arrange(pA+ggtitle(""), pB+ggtitle(""), pC+ggtitle(""), pD+ggtitle(""), nrow=2,top = textGrob("Log of Raw, Downsampled CPM for all mature miRNAs: All Samples",gp=gpar(fontsize=15,font=2)))
+
 ```
 
 ##########################################################################################
@@ -703,3 +715,36 @@ mean(rowMedians(as.matrix(counts_onlynoblockersDE)))
 #No targets in these 8 no blocker specific miRNAs
 ```
 Overall, much higher total read counts for no blocker-specific sig DE miRNAs. Supports the idea that without blocker, can't get really good discrimination of lowly expressed miRNAs!
+
+#Potential Off target effects: looking more closely
+
+In original, targets-included CL analysis, there were 25 DE miRNAs at padj<0.01. How many of these are target or target families? How many were downregulated in blocker group? What were the mean raw counts for these?
+
+```{r}
+OT<- as.data.frame(PotentialOffTargets[,c(2,6)])
+RawCounts<- as.data.frame(rowMeans(CL_Downsampled[rownames(CL_Downsampled) %in% rownames(OT),]))
+OT<- merge(OT, RawCounts, by=0)
+colnames(OT)<- c("Species", "log2FoldChange", "padj", "MeanRawCounts")
+OT$Target<- OT$Species %in% ActualTargets
+OT$TargetFamily<- OT$Species %in% TargetFamilies
+OT$EitherTarget_TargetFamily<- as.logical(rowSums(OT[,c(5,6)]))
+OT$log2padj<- log2(OT$padj)
+```
+
+```{r}
+#plot
+p<-ggplot(OT,aes(x=log2FoldChange, y= padj))+
+  geom_point(aes(size=MeanRawCounts, fill= EitherTarget_TargetFamily),colour="black",pch=21)+
+  scale_size_continuous(range = c(1.5, 35))+
+  scale_color_manual(values=c("black", "black")) +
+  scale_x_continuous(limits = c(-6, 7))+
+  scale_y_continuous(limits = c(-0.008, .05))+
+  theme_classic()
+p
+```
+
+Write potential off targets to file
+```{r}
+write.csv(OT, paste(wd, "PotentialOffTargets_FromCL_TargetsIncludedAnalysis.csv", sep ="") )
+```
+
