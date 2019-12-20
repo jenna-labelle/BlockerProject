@@ -59,7 +59,8 @@ SumTargetCounts<- colSums(targetCounts)
 PercentMapToTargets<-as.data.frame(SumTargetCounts/colSums(BS_CollapsedCounts) *100)
 PercentMapToTargets$ID<- rownames(PercentMapToTargets)
 colnames(PercentMapToTargets)<-c("PercentMapToTarget", "ID")
-PercentMapToTargets$BlockerStatus<- c(rep("NoBlocker", 4), rep("Blocker", 4))
+PercentMapToTargets$BlockerStatus<- c(rep("Unblocked", 4), rep("Blocked", 4))
+PercentMapToTargets$Sample<-rep(c("A", "B", "C", "D"),2)
 PercentMapToTargets
 ```
 
@@ -67,11 +68,26 @@ PercentMapToTargets
 
 Finally, visualize this change for all 4 samples from blocker to no blocker
 ```{r}
-ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, color=BlockerStatus, fill=BlockerStatus))+
+#PercentReadsMapToTargetFamilies_Basespace_MatureIsomirs_TechCollapsed
+
+p<- ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=Sample, fill=BlockerStatus))+
   geom_bar(stat="identity", position="dodge")+ 
   theme_classic()+
-  labs(title = 'Percent of Total Reads that Map to Targets',
-       subtitle = 'Technical Replicates collapsed')
+  ylab("Percent of reads mapping to targets or species in target families")+
+  xlab("")+
+  scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="turquoise3"))+
+  theme(axis.text.y   = element_text(size=10),
+        axis.text.x   = element_text(size=10),
+        axis.title.y  = element_text(size=13),
+        axis.title.x  = element_text(size=14),
+        panel.border = element_rect(colour = "black", fill=NA, size=2),
+        legend.title=element_blank(),
+        legend.position = c(.9,.7),
+        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
+        axis.text.x.bottom  =element_text(size=20))
+  
+        
+p
              
 ```
 
@@ -98,12 +114,27 @@ colnames(PercentMapToTargets)<-c("PercentMapToTarget", "ID")
 PercentMapToTargets$BlockerStatus<- c(rep("NoBlocker", 4), rep("Blocker", 4))
 PercentMapToTargets
 ```
+
 ```{r}
-ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, color=BlockerStatus, fill=BlockerStatus))+
+#Title: PercentMapToTargetFamilies_Basespace_MatureOnly_TechCollapsed
+p<- ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=Sample, fill=BlockerStatus))+
   geom_bar(stat="identity", position="dodge")+ 
   theme_classic()+
-  labs(title = 'Percent of Total Reads that Map to Targets',
-       subtitle = 'Technical Replicates collapsed, Only Mature Species')
+  ylab("Percent of reads mapping to targets or species in target families")+
+  xlab("")+
+  scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="turquoise3"))+
+  theme(axis.text.y   = element_text(size=10),
+        axis.text.x   = element_text(size=10),
+        axis.title.y  = element_text(size=13),
+        axis.title.x  = element_text(size=14),
+        panel.border = element_rect(colour = "black", fill=NA, size=2),
+        legend.title=element_blank(),
+        legend.position = c(.9,.7),
+        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
+        axis.text.x.bottom  =element_text(size=20))
+  
+        
+p
 ```
 
 #Repeating the two above graphs, but not collapsing technical replicates
@@ -118,18 +149,32 @@ SumTargetCounts<- colSums(targetCounts)
 PercentMapToTargets<-as.data.frame(SumTargetCounts/colSums(BaseSpaceDownSampled_Counts) *100)
 PercentMapToTargets$ID<- rownames(PercentMapToTargets)
 colnames(PercentMapToTargets)<-c("PercentMapToTarget", "ID")
-PercentMapToTargets$BlockerStatus<- c(rep("NoBlocker", 8), rep("Blocker", 8))
+PercentMapToTargets$BlockerStatus<- c(rep("Unblocked", 8), rep("Blocked", 8))
 
 #Rename samples to low/medium/high RNA input
-PercentMapToTargets$ID<- c("A_low", "A_medium", "A_high", "B_low", "B_medium", "B_high", "C", "D", "A_low", "A_medium", "A_high","B_low", "B_medium", "B_high", "C", "D" )
+PercentMapToTargets$ID<- rep(c("A.1", "A.2", "A.3", "B.1", "B.2", "B.3", "C", "D"),2) 
+PercentMapToTargets$Sample<- rep(c(rep("A", 3), rep("B", 3), "C", "D"),2)
 
 #plot
-ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, color=BlockerStatus, fill=BlockerStatus))+
+p<- ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, fill=BlockerStatus))+
   geom_bar(stat="identity", position="dodge")+ 
   theme_classic()+
-  labs(title = 'Percent of Total Reads that Map to Targets',
-       subtitle = 'All samples, Mature and Isomirs')+
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  ylab("Percent of reads mapping to targets or species in target families")+
+  xlab("")+
+  scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="turquoise3"))+
+  theme(axis.text.y   = element_text(size=10),
+        axis.text.x   = element_text(size=10),
+        axis.title.y  = element_text(size=13),
+        axis.title.x  = element_text(size=14),
+        panel.border = element_rect(colour = "black", fill=NA, size=2),
+        legend.title=element_blank(),
+        legend.position = c(.9,.7),
+        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
+        axis.text.x.bottom  =element_text(size=20, angle=45, hjust=1))+
+  xlim("A.1":D")
+
+     
+     
 
 ```
 
