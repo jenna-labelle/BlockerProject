@@ -111,7 +111,8 @@ SumTargetCounts<- colSums(targetCounts)
 PercentMapToTargets<-as.data.frame(SumTargetCounts/colSums(BaseSpace_MC) *100)
 PercentMapToTargets$ID<- rownames(PercentMapToTargets)
 colnames(PercentMapToTargets)<-c("PercentMapToTarget", "ID")
-PercentMapToTargets$BlockerStatus<- c(rep("NoBlocker", 4), rep("Blocker", 4))
+PercentMapToTargets$BlockerStatus<- c(rep("Blocked", 4), rep("Unblocked", 4))
+PercentMapToTargets$Sample<-rep(c("A", "B", "C", "D"),2)
 PercentMapToTargets
 ```
 
@@ -122,6 +123,7 @@ p<- ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=Sample, fill=Blocker
   theme_classic()+
   ylab("Percent of reads mapping to targets or species in target families")+
   xlab("")+
+  ylim (0,100)+
   scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="turquoise3"))+
   theme(axis.text.y   = element_text(size=10),
         axis.text.x   = element_text(size=10),
@@ -129,7 +131,7 @@ p<- ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=Sample, fill=Blocker
         axis.title.x  = element_text(size=14),
         panel.border = element_rect(colour = "black", fill=NA, size=2),
         legend.title=element_blank(),
-        legend.position = c(.9,.7),
+        legend.position = c(.9,.85),
         legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
         axis.text.x.bottom  =element_text(size=20))
   
@@ -161,6 +163,7 @@ p<- ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, fill=BlockerStat
   theme_classic()+
   ylab("Percent of reads mapping to targets or species in target families")+
   xlab("")+
+  ylim (0,100)+
   scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="turquoise3"))+
   theme(axis.text.y   = element_text(size=10),
         axis.text.x   = element_text(size=10),
@@ -168,13 +171,13 @@ p<- ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, fill=BlockerStat
         axis.title.x  = element_text(size=14),
         panel.border = element_rect(colour = "black", fill=NA, size=2),
         legend.title=element_blank(),
-        legend.position = c(.9,.7),
+        legend.position = c(.9,.85),
         legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
-        axis.text.x.bottom  =element_text(size=20, angle=45, hjust=1))+
-  xlim("A.1":D")
+        axis.text.x.bottom  =element_text(size=20, angle=45, hjust=1))
+  
 
      
-     
+p     
 
 ```
 
@@ -207,6 +210,8 @@ ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, color=BlockerStatus,
   labs(title = 'Percent of Total Reads that Map to Targets',
        subtitle = 'All samples, Only Mature Species')+
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
 ```
 
 
