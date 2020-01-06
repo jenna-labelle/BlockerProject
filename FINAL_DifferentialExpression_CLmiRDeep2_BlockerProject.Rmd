@@ -201,66 +201,26 @@ Create dds object, run DESeq2
 ```{r}
 #Run DESeq2: custom functions can be found in Functions.Rmd file
 #Technical replicates are collapsed and pairwise analysis performed
-
 dds<- RunDESeq2(CL_AT, meta, TRUE)
-
-#Extract results
-resOrdered<- GetDEResults(dds)
-#31/21
-
-rownames(resOrdered[resOrdered$padj<0.01,])
 ```
 
 
 Visualize sample differences using PCA
 ```{r}
 #Normalized (variance stabilized transformation), then run PCA
-vsd <- varianceStabilizingTransformation(dds, blind=TRUE)
-plotPCA(vsd, intgroup="sampleGroup")
+plotPCA(varianceStabilizingTransformation(dds, blind=TRUE), intgroup="sampleGroup")
 
 p<- MyPCA(dds, meta,45, 18, colors, -15,15)
 
 ```
 
-```{r}
-vsd <- varianceStabilizingTransformation(dds, blind=TRUE)
-  PCA<-plotPCA(vsd, intgroup="sampleGroup",returnData=TRUE)
-  PCA$Sample<- meta$Sample
-  
-  #plot
-  p<- ggplot(PCA, aes(x=PC1, y=PC2, color=group))+
-  geom_point(size=5),
-  scale_color_manual(values=colors)
-  theme_classic()+
-  ylim(miny,maxy)+
-  ylab(paste("PC2: ", PC2Variance, "% Variance", sep =""))+
-  xlab(paste("PC1: ", PC1Variance, "% Variance", sep =""))+
-  geom_text(aes(label=Sample),hjust=.5, size= 5,vjust=-1.2, color="black")+
-  theme(axis.text.y   = element_text(size=10, colour = "black"),
-        axis.title.y  = element_text(size=14, colour = "black"),
-        axis.title.x  = element_text(size=14, colour = "black"),
-        axis.text.x  = element_text(size=10, colour = "black"),
-        legend.background = element_rect(fill=NA, size=1, 
-                                         linetype="solid", color="black"),
-        legend.title=element_blank(),
-        legend.key.size = unit(.4, "cm"),
-        legend.spacing.y = unit(0, "mm"),
-        legend.position = c(.9,.892),
-        panel.border = element_rect(colour = "black", fill=NA, size=2))
-```
-
 
 Extract DESeq2 results and visualize with heatmap
 ```{r}
-res<- results(dds)
-res<- na.omit(res)
-resOrdered<- res[order(res$padj),]
-nrow(resOrdered[resOrdered$padj<0.01,])
-nrow(resOrdered[resOrdered$padj<0.05,])
-#21 DE miRNAs- padj <0.05
-#31 DE miRNAs- padj <0.01
+resOrdered<-GetDEResults(dds)
+#31/21
 
-rownames(resOrdered[resOrdered$padj<0.05,])
+rownames(resOrdered[resOrdered$padj<0.01,])
 
 #normalize results
 rld<- rlog(dds)
@@ -268,31 +228,7 @@ rld<- rlog(dds)
 
 Plot heatmap
 ```{r}
-#Select top sig DE miRNAs- fewer here than for mature/isomir analysis because there are a lot fewer sig DE miRNAs
-topgenes<- rownames(resOrdered[1:50,])
-mat<- assay(rld)[topgenes,]
-mat<- mat - rowMeans(mat)
-colnames(mat)<-paste(PCA$Sample," (",PCA$sampleGroup, ")",sep="")
-
-#Heatmap settings
-subtractFromMin<- -.2
-subtractFromMax<- 1
-lengthOut<- 75
-mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
-
-#Create metadata- to be used to color code to show which group the sample belongs to
-metadata<- data.frame(Group=PCA$sampleGroup, row.names=paste(PCA$Sample," (",PCA$sampleGroup, ")",sep=""),Sample=PCA$Sample)
-
-#plot heatmap
-p<-pheatmap(mat, breaks = mat_breaks, 
-            color =inferno(length(mat_breaks-1)),
-            show_rownames = TRUE, show_colnames=FALSE,
-            annotation = metadata,  
-            annotation_colors= list(
-              Group=c(Blocked="firebrick3", Unblocked="turquoise3"),
-              Sample=c(A="goldenrod3", B="grey60", C="skyblue3", D="darkolivegreen4")),
-            fontsize_row = 8,fontsize=12,treeheight_row=0,
-            border_color= "grey45")
+p<- PlotHeatmap(resOrdered, rld, metadata,50, -.2,1, 10)
 ```
 
 In heatmap of DE results, for A/B, samples cluster by SAMPLE and not BLOCKER STATUS, as we would expect if there are no huge off target effects caused by the blockers. However- C/D still cluster by blocker status. Will look at removing targets+target families, next, see if C/D still cluster by blocker status
@@ -325,64 +261,25 @@ CL_NoTF<- CL_AT[!(rownames(CL_AT)%in%TargetFamilies),]
 
 Create dds object, run DESeq2, visualize with PCA
 ```{r}
-#create DESeq2 object- just based on samplegroup (blockerstatus), will add samples to model later (i.e., pairwise analysis)
-dds<- DESeqDataSetFromMatrix(countData=CL_NoTF, 
-                             colData=meta, 
-                             design=~sampleGroup)
+#Run DESeq2: custom functions can be found in Functions.Rmd file
+#Technical replicates are collapsed and pairwise analysis performed
+dds<- RunDESeq2(CL_NoTF,meta,TRUE)
 
-#Collapse replicates- using internal DESeq2 function
-ddsColl<- collapseReplicates(dds, dds$sample)
+#Plot PCA
+plotPCA(varianceStabilizingTransformation(dds), intgroup="sampleGroup")
+p<- MyPCA(dds, metadata,46,19,colors, -15,15)
 
-#Create model that takes into account sample differences
-ddsMF<- ddsColl
-design(ddsMF)<- formula(~patient + sampleGroup)
-
-#run DESeq2
-dds<- DESeq(ddsMF)
-
-#Visualize sample differences using PCA
-
-#Normalized (variance stabilized transformation), then run PCA
-vsd <- varianceStabilizingTransformation(ddsMF, blind=TRUE)
-PCA<-plotPCA(vsd, intgroup="sampleGroup",returnData=TRUE)
-PCA$Sample<- c("A", "A", "B", "B", "C", "C", "D", "D")
-
-p<- ggplot(PCA, aes(x=PC1, y=PC2, color=group))+
-  geom_point(size=5)+
-  scale_color_manual(values=colors)+
-  theme_classic()+
-  ylim(-15,15)+
-  ylab("PC2: 19% Variance")+
-  xlab("PC1: 46% Variance")+
-  geom_text(aes(label=Sample),hjust=.5, size= 5,vjust=-1.2, color="black")+
-  theme(axis.text.y   = element_text(size=10, colour = "black"),
-        axis.title.y  = element_text(size=14, colour = "black"),
-        axis.title.x  = element_text(size=14, colour = "black"),
-        axis.text.x  = element_text(size=10, colour = "black"),
-        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
-        legend.title=element_blank(),
-        legend.key.size = unit(.4, "cm"),
-        legend.spacing.y = unit(0, "mm"),
-        legend.position = c(.9,.892),
-        panel.border = element_rect(colour = "black", fill=NA, size=2))
-  
-  
-p
 ```
 
 Very similar to previous analysis (just actual targets removed), samples still cluster by SAMPLE TYPE not by blocker status
 
 Extract DESeq2 results and visualize with heatmap
 ```{r}
-res<- results(dds)
-res<- na.omit(res)
-resOrdered<- res[order(res$padj),]
-nrow(resOrdered[resOrdered$padj<0.05,])
-nrow(resOrdered[resOrdered$padj<0.01,])
+resOrdered<- GetDEResults(dds)
 #27 DE miRNAs- padj <0.05
 #19 DE miRNAs- padj <0.01
 
-rownames(resOrdered[resOrdered$padj<0.05,])
+rownames(resOrdered[resOrdered$padj<0.01,])
 
 #normalize results
 rld<- rlog(dds)
@@ -390,31 +287,7 @@ rld<- rlog(dds)
 
 Plot heatmap
 ```{r}
-#Select top sig DE miRNAs- fewer here than for mature/isomir analysis because there are a lot fewer sig DE miRNAs
-topgenes<- rownames(resOrdered[1:20,])
-mat<- assay(rld)[topgenes,]
-mat<- mat - rowMeans(mat)
-colnames(mat)<-paste(PCA$Sample," (",PCA$sampleGroup, ")",sep="")
-
-#Heatmap settings
-subtractFromMin<- -.5
-subtractFromMax<- 1.2
-lengthOut<- 75
-mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
-
-#Create metadata- to be used to color code to show which group the sample belongs to
-metadata<- data.frame(Group=PCA$sampleGroup, row.names=paste(PCA$Sample," (",PCA$sampleGroup, ")",sep=""),Sample=PCA$Sample)
-
-#plot heatmap
-p<-pheatmap(mat, breaks = mat_breaks, 
-            color =colorRampPalette( c("red", "black", "green"), space="rgb")(100),
-            show_rownames = TRUE, show_colnames=FALSE,
-            annotation = metadata,  
-            annotation_colors= list(
-              Group=c(Blocked="firebrick3", Unblocked="blue3"),
-              Sample=c(A="goldenrod1", B="violetred3", C="skyblue3", D="darkolivegreen4")),
-            fontsize_row = 12,fontsize=12,treeheight_row=0,
-            border_color= NA)
+p<-PlotHeatmap(resOrdered, rld, metadata, 20, -.2,1.2,10)
 
 ```
 
@@ -461,7 +334,7 @@ CPMLog$target<- rownames(CPMLog) %in% targets
 
 #Add in DE info- using DESeq2 results from targets included analysis. Import data here.
 resOrdered<-CL_DESeq2Results
-sig<- resOrdered[resOrdered$padj<0.05,]
+sig<- resOrdered[resOrdered$padj<0.01,]
 CPMLog$Sig<- rownames(CPMLog) %in% rownames(sig)
 
 #Add in third column, used to color points in graph. Add together target/sig columns. If it's a target and sig, it'll be 2, if it's just sig it'll be 1, if it's neither it'll be 0.
@@ -470,24 +343,19 @@ CPMLog$Color<- as.factor(rowSums(TargetSig))
 CPMLog$Color<- gsub(2, "Target", CPMLog$Color)
 CPMLog$Color<- gsub(1, "DE", CPMLog$Color)
 CPMLog$Color<- gsub(0, "Not DE", CPMLog$Color)
+CPMLog[grep("hsa-miR-451a", rownames(CPMLog)),19]<- "Target"
 ```
 
 
 ```{r}
 #Looking at sample A- get average for all 3 Inputs
 CPMLogA<- CPMLog[,c(1:3, 9:11,19)]
-CPMLogA$A.NoBlocker<- rowMeans(CPMLogA[,1:3])
-CPMLogA$A.Blocker<- rowMeans(CPMLogA[,4:6])
+CPMLogA$NoBlocker<- rowMeans(CPMLogA[,1:3])
+CPMLogA$Blocker<- rowMeans(CPMLogA[,4:6])
 CPMLogA<- CPMLogA[,c(8,9,7)]
 
-pA<- ggplot(CPMLogA, aes(x=A.NoBlocker, y=A.Blocker, color=Color))+
-  geom_point()+
-  geom_abline(slope=1, color="red")+
-  scale_colour_manual(values=c("red","black", "blue"))+
-  ggtitle("Log of Raw, Downsampled CPM of all Mature miRNAs: Sample A")+
-  theme_classic()
- 
-pA
+pA<- CPMPlot(CPMLogA, "A")
+
 ```
 
 Most species follow the same general trend for both blocked and unblocked- i.e., overall similar expression pattern. EXCEPT for the targets (plus a few off target effects) 
@@ -495,50 +363,27 @@ Most species follow the same general trend for both blocked and unblocked- i.e.,
 ```{r}
 #Looking at sample B- get average for all 3 Inputs
 CPMLogB<- CPMLog[,c(4:6, 12:14,19)]
-CPMLogB$B.NoBlocker<- rowMeans(CPMLogB[,1:3])
-CPMLogB$B.Blocker<- rowMeans(CPMLogB[,4:6])
+CPMLogB$NoBlocker<- rowMeans(CPMLogB[,1:3])
+CPMLogB$Blocker<- rowMeans(CPMLogB[,4:6])
 CPMLogB<- CPMLogB[,c(8,9,7)]
 
-pB<- ggplot(CPMLogB, aes(x=B.NoBlocker, y=B.Blocker, color=Color))+
-  geom_point()+
-  geom_abline(slope=1, color="red")+
-  scale_colour_manual(values=c("red","black", "blue"))+
-  ggtitle("Log of Raw, Downsampled CPM of all Mature miRNAs: Sample B")+
-  theme_classic()
- 
-pB
+pB<- CPMPlot(CPMLogB, "B")
 ```
 
 ```{r}
 #For sample C
 CPMLogC<- CPMLog[,c(7, 15,19)]
-colnames(CPMLogC)<- c("C.NoBlocker", "C.Blocker", "Color")
+colnames(CPMLogC)<- c("NoBlocker", "Blocker", "Color")
 
-pC<- ggplot(CPMLogC, aes(x=C.NoBlocker, y=C.Blocker, color=Color))+
-  geom_point()+
-  geom_abline(slope=1, color="red")+
-  scale_colour_manual(values=c("red","black", "blue"))+
-  ggtitle("Log of Raw, Downsampled CPM of all Mature miRNAs: Sample C")+
-  theme_classic()
- 
-pC
+pC<- CPMPlot(CPMLogC, "C")
 ```
 
 ```{r}
 #For sample D
 CPMLogD<- CPMLog[,c(8, 16,19)]
-colnames(CPMLogD)<- c("D.NoBlocker", "D.Blocker", "Color")
+colnames(CPMLogD)<- c("NoBlocker", "Blocker", "Color")
 
-pD<- ggplot(CPMLogD, aes(x=D.NoBlocker, y=D.Blocker, color=Color))+
-  geom_point()+
-  geom_abline(slope=1, color="red")+
-  scale_colour_manual(values=c("red","black", "blue"))+
-  ggtitle("Log of Raw, Downsampled CPM of all Mature miRNAs: Sample D")+
-  theme_classic()+
-  theme(plot.title = element_text(size = 10, face = "bold"))
-  
- 
-pD
+pD<- CPMPlot(CPMLogD, "D")
 ```
 
 
@@ -549,19 +394,12 @@ CPMLogAll$NoBlocker<- rowMeans(CPMLogAll[,1:8])
 CPMLogAll$Blocker<- rowMeans(CPMLogAll[,9:16])
 CPMLogAll<- CPMLogAll[,c(20,21,19)]
 
-pMean<- ggplot(CPMLogAll, aes(x=NoBlocker, y=Blocker, color=Color))+
-  geom_point()+
-  geom_abline(slope=1, color="red")+
-  scale_colour_manual(values=c("red","black", "blue"))+
-  ggtitle("Log of Raw, Downsampled CPM of all Mature miRNAs: Mean Across All Samples")+
-  theme_classic()
- 
-pMean
+pMean<- CPMPlot(CPMLogAll, "All")
 ```
 
 Putting A-D together on one plot:
 ```{r}
-grid.arrange(pA+ggtitle(""), pB+ggtitle(""), pC+ggtitle(""), pD+ggtitle(""), nrow=2,top = textGrob("Log of Raw, Downsampled CPM for all mature miRNAs: All Samples",gp=gpar(fontsize=15,font=2)))
+grid.arrange(pA+ggtitle(""), pB+ggtitle(""), pC+ggtitle(""), pD+ggtitle(""), nrow=2)
 
 ```
 
