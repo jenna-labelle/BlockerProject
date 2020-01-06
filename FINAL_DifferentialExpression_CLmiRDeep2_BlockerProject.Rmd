@@ -17,6 +17,7 @@ suppressPackageStartupMessages(library(reshape2))
 suppressPackageStartupMessages(library(grid))
 suppressPackageStartupMessages(library(gridExtra))
 suppressPackageStartupMessages(library(metaseqR))
+suppressPackageStartupMessages(library(colorRamps))
 ```
 
 
@@ -46,31 +47,38 @@ Matrix #1 used initially, but after determining that a mismatch of 1 should be a
 
 -Samples A and B have 3 technical replicates, for both blocked and unblocked groups. These technical replicates are collapsed using an internal DESeq2 function. These technical replicates have varying RNA input amounts into library construction, but this was determined to have no effect on the resulting libraries (See ___.Rmd). This is additionally confirmed by PCA clustering here.
 
-Read in data:
+Read in data (), reformat:
 ```{r}
+#Set working directory
 wd<- "//Cifs2/rcdata$/Channing_miRNA_Blocker_Test/BlockerProject/BlockerProject/"
-CL_countsInput<- read.csv(paste(wd, "RawData/miRNA_CLmiRDeep2Results_AllSamples_DefaultmiRDeep2Settings.csv",sep=""))
-  #Note: this dataset comes from "Combining_miRNAHits_CLmiRBaseCountmatrix.Rmd", where count matrices for individual samples were combined into the single file here
-rownames(CL_countsInput)<-CL_countsInput$X
-CL_countsInput<- CL_countsInput[,-1]
 
-#Previously downsampled data: (in "FINAL_BlockersReduceTargetMapping.Rmd")
+#Read in previously downsampled data: (in "FINAL_BlockersReduceTargetMapping.Rmd")
 CL_countsInput_Downsampled<- read.csv(paste(wd, "RawData/Downsampled_miRNA_CLmiRDeep2Results_AllSamples_DefaultmiRDeep2Settings.csv",sep=""))
 rownames(CL_countsInput_Downsampled)<-CL_countsInput_Downsampled$X
 CL_countsInput_Downsampled<- CL_countsInput_Downsampled[,-1]
+
 #Reorder 
-CL_countsInput_Downsampled<- CL_countsInput_Downsampled[,c(1,3,5,7,9,11,13,15,2,4,6,8,10,12,14,16)]
+CL_countsInput_Downsampled<- 
+CL_countsInput_Downsampled[,c(1,3,5,7,9,11,13,15,2,4,6,8,10,12,14,16)]
+
 #Convert to integer (removes decimal places)
 CL_countsInput_Downsampled_Integer<- as.data.frame(lapply(CL_countsInput_Downsampled, as.integer))
 rownames(CL_countsInput_Downsampled_Integer)<- rownames(CL_countsInput_Downsampled)
 CL_Downsampled<- CL_countsInput_Downsampled_Integer
-#This matrix used for downstream purposes
 ```
 
+
+```{r}
+#Need to detach DESeq (need to use DESeq2)- used for metaseqR
+detach("package:metaseqR")
+detach("package:DESeq")
+```
 
 General plotting variables
 ```{r}
 colors<- c("firebrick3","turquoise3")
+
+metadata<- data.frame(sampleGroup=rep(c("Unblocked", "Blocked"),4), Sample=c("A", "A", "B", "B", "C", "C", "D", "D"))
 ```
 
 
@@ -84,69 +92,28 @@ Prep data for DESeq2, create metadata and DESeq2 object, then run DESeq2:
 #rename rows, removing input info
 colnames(CL_Downsampled)<- c(rep("A.0", 3), rep("B.0", 3), "C.0", "D.0", rep("A.1", 3), rep("B.1", 3), "C.1", "D.1")
 
-#Create metadata:
-
-#set blocker status
-sampleGroup<- as.factor(c(rep("Unblocked", 8), rep("Blocked", 8)))
-#this column is used to collapse technical replicates
-sample<- colnames(CL_Downsampled)
-#this column is to control for sample to sample differences
-patient<- as.factor(c(rep("A", 3), rep("B", 3), "C", "D", rep("A", 3), rep("B", 3), "C", "D"))
+#Create metadata- will be used in all analyses:
+sampleGroup<- as.factor(c(rep("Unblocked", 8), rep("Blocked", 8))) #set blocker status
+Sample<- colnames(CL_Downsampled) #this column is used to collapse technical replicates
+patient<- as.factor(c(rep("A", 3), rep("B", 3), "C", "D", rep("A", 3), rep("B", 3), "C", "D")) #this column is to control for sample to sample differences
 meta<- data.frame(sample, sampleGroup, patient)
 
-#create DESeq2 object- just based on samplegroup (blockerstatus), will add samples to model later (i.e., pairwise analysis)
-dds<- DESeqDataSetFromMatrix(countData=CL_Downsampled, 
-                             colData=meta, 
-                             design=~sampleGroup)
+#Run DESeq2: custom functions can be found in Functions.Rmd file
+#Technical replicates are collapsed and pairwise analysis performed
 
-#Collapse replicates- using internal DESeq2 function
-ddsColl<- collapseReplicates(dds, dds$sample)
-
-#Create model that takes into account sample differences
-ddsMF<- ddsColl
-design(ddsMF)<- formula(~patient + sampleGroup)
-
-#run DESeq2
-dds<- DESeq(ddsMF)
+dds<- RunDESeq2(CL_Downsampled, meta, TRUE)
 ```
 
 Visualize sample differences using PCA
 
 Note: this function uses the dds object, but no information on sample group is input into the analysis (i.e., unsupervised clustering)
 
-```{r}
-#Need to detach DESeq (need to use DESeq2)- used for metaseqR
-detach("package:metaseqR")
-detach("package:DESeq")
-```
 
 ```{r}
-#Normalized (variance stabilized transformation), then run PCA
-vsd <- varianceStabilizingTransformation(ddsMF, blind=TRUE)
-PCA<-plotPCA(vsd, intgroup="sampleGroup",returnData=TRUE)
-PCA$Sample<- c("A", "A", "B", "B", "C", "C", "D", "D")
+#Plot PCA using DESeq2 functions, get % variance from here. Input for custom function.
+plotPCA(varianceStabilizingTransformation(dds), intgroup="sampleGroup")
 
-p<- ggplot(PCA, aes(x=PC1, y=PC2, color=group))+
-  geom_point(size=5)+
-  scale_color_manual(values=colors)+
-  theme_classic()+
-  ylim(-15,15)+
-  ylab("PC2: 18% Variance")+
-  xlab("PC1: 43% Variance")+
-  geom_text(aes(label=Sample),hjust=.5, size= 5,vjust=-1.2, color="black")+
-  theme(axis.text.y   = element_text(size=10, colour = "black"),
-        axis.title.y  = element_text(size=14, colour = "black"),
-        axis.title.x  = element_text(size=14, colour = "black"),
-        axis.text.x  = element_text(size=10, colour = "black"),
-        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
-        legend.title=element_blank(),
-        legend.key.size = unit(.4, "cm"),
-        legend.spacing.y = unit(0, "mm"),
-        legend.position = c(.9,.892),
-        panel.border = element_rect(colour = "black", fill=NA, size=2))
-  
-  
-p
+p<-MyPCA(dds, metadata, 43, 18, colors, -15,15)
 ```
 
 
@@ -159,15 +126,8 @@ TechNotCollapsed<-CL_Downsampled
 #Rename samples
 colnames(TechNotCollapsed)<- c(paste("A.0.", 1:3,sep=""), paste("B.0.", 1:3,sep=""), "C.0", "D.0", paste("A.1.", 1:3,sep=""), paste("B.1.", 1:3,sep=""), "C.1", "D.1")
 
-#Create metadata:
 
-#set blocker status
-sampleGroup<- as.factor(c(rep("NoBlocker", 8), rep("Blocker", 8)))
-#this column is to control for sample to sample differences
-patient<- as.factor(c(paste("A", 1:3,sep=""), paste("B", 1:3,sep=""), "C", "D", paste("A", 1:3,sep=""), paste("B", 1:3,sep=""), "C", "D"))
-meta<- data.frame(sampleGroup, patient)
-
-#create DESeq2 object- just based on samplegroup (blockerstatus), will add samples to model later (i.e., pairwise analysis)
+#create DESeq2 object
 dds_TNC<- DESeqDataSetFromMatrix(countData=TechNotCollapsed, 
                              colData=meta, 
                              design=~sampleGroup)
@@ -180,19 +140,7 @@ design(ddsMF_TNC)<- formula(~patient + sampleGroup)
 #run DESeq2
 dds_TNC<- DESeq(ddsMF_TNC)
 
-#Normalized (variance stabilized transformation), then run PCA
-vsd_TNC <- varianceStabilizingTransformation(ddsMF_TNC, blind=TRUE)
-PCA_TNC<-plotPCA(vsd_TNC, intgroup="sampleGroup",returnData=TRUE)
-
-p<- ggplot(PCA_TNC, aes(x=PC1, y=PC2, color=group))+
-  geom_point(size=4)+
-  scale_color_manual(values=c("orangered1","springgreen2"))+
-  theme_classic()+
-  ylim(-20,25)+
-  ggtitle("PCA: Blocker vs no Blocker, Technical Replicates not Collapsed")+
-  geom_text(aes(label=name),hjust=.5, vjust=-1.2, color="black")
-  
-p
+p<- MyPCA(dds_TNC, meta, 43, 18, colors, -20,27)
 
 ```
 So the answer to that question is yes- samples still cluster in a similar pattern, even if you don't collapse by technical replicates. A/B and C/D really are more similar to one another.
@@ -203,15 +151,9 @@ So the answer to that question is yes- samples still cluster in a similar patter
 
 Differential expression results:
 ```{r}
-res<- results(dds)
-res<- na.omit(res)
-resOrdered<- res[order(res$padj),]
-nrow(resOrdered[resOrdered$padj<0.05,])
-nrow(resOrdered[resOrdered$padj<0.01,])
-#37 DE miRNAs- padj <0.05
-#25 DE miRNAs- padj <0.01
+resOrdered<-GetDEResults(dds)
+#DE: 37 <0.05 /25 <0.01
 
-#Save results for later
 CL_DESeq2Results<-resOrdered
 
 rownames(resOrdered[resOrdered$padj<0.01,])
@@ -227,28 +169,7 @@ Visualize DE results with heatmap:
 #normalize results
 rld<- rlog(dds)
 
-#Select top 75 sig DE miRNAs
-topgenes<- rownames(resOrdered[1:50,])
-mat<- assay(rld)[topgenes,]
-mat<- mat - rowMeans(mat)
-
-#Heatmap settings
-subtractFromMin<- 0
-subtractFromMax<- 1
-lengthOut<- 75
-mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
-
-#Create metadata- to be used to color code to show which group the sample belongs to
-metadata<- data.frame(Group=PCA$sampleGroup, row.names=PCA$name)
-
-
-Group       <- colors
-names(Group) <- c("Blocked", "Unblocked")
-anno_colors <- list(Group = Group)
-
-#plot heatmap
-p<-pheatmap(mat, ,breaks = mat_breaks, color =inferno(length(mat_breaks-1)),show_rownames = TRUE, annotation = metadata,  annotation_colors= anno_colors,fontsize_row = 5,border_color= NA)
-
+p<-PlotHeatmap(resOrdered,rld, metadata,30, -.2,1)
 ```
 
 Blocked/unblocked samples cluster together, as expected. Samples A/B and C/D also cluster together, as seen in the PCA results
@@ -266,7 +187,7 @@ Two variations
     a) excluding just the actual targets
     b) excluding the actual targets + members of the same family
 
-#Variation A (only actual targets removed) using count matrix #1b (from BaseSpace, mature species only)
+#Variation A (only actual targets removed) 
 
 ```{r}
 #Get list of all targets
@@ -278,50 +199,55 @@ CL_AT<- CL_Downsampled[!(rownames(CL_Downsampled) %in% ActualTargets),]
 
 Create dds object, run DESeq2
 ```{r}
-#Create metadata:
-#set blocker status
-sampleGroup<- as.factor(c(rep("NoBlocker", 8), rep("Blocker", 8)))
-#this column is used to collapse technical replicates
-sample<- colnames(CL_Downsampled)
-#this column is to control for sample to sample differences
-patient<- as.factor(c(rep("A", 3), rep("B", 3), "C", "D", rep("A", 3), rep("B", 3), "C", "D"))
-meta<- data.frame(sample, sampleGroup, patient)
+#Run DESeq2: custom functions can be found in Functions.Rmd file
+#Technical replicates are collapsed and pairwise analysis performed
 
-#create DESeq2 object- just based on samplegroup (blockerstatus), will add samples to model later (i.e., pairwise analysis)
-dds<- DESeqDataSetFromMatrix(countData=CL_AT, 
-                             colData=meta, 
-                             design=~sampleGroup)
+dds<- RunDESeq2(CL_AT, meta, TRUE)
 
-#Collapse replicates- using internal DESeq2 function
-ddsColl<- collapseReplicates(dds, dds$sample)
+#Extract results
+resOrdered<- GetDEResults(dds)
+#31/21
 
-#Create model that takes into account sample differences
-ddsMF<- ddsColl
-design(ddsMF)<- formula(~patient + sampleGroup)
-
-#run DESeq2
-dds<- DESeq(ddsMF)
+rownames(resOrdered[resOrdered$padj<0.01,])
 ```
 
 
 Visualize sample differences using PCA
 ```{r}
 #Normalized (variance stabilized transformation), then run PCA
-vsd <- varianceStabilizingTransformation(ddsMF, blind=TRUE)
-PCA<-plotPCA(vsd, intgroup="sampleGroup",returnData=TRUE)
+vsd <- varianceStabilizingTransformation(dds, blind=TRUE)
+plotPCA(vsd, intgroup="sampleGroup")
 
-p<- ggplot(PCA, aes(x=PC1, y=PC2, color=group))+
-  geom_point(size=4)+
-  scale_color_manual(values=c("orangered1","springgreen2"))+
-  theme_classic()+
-  ylim(-15,15)+
-  ggtitle("PCA: Blocker vs no Blocker, Mature Only, Actual Targets Removed")+
-  geom_text(aes(label=name),hjust=.5, vjust=-1.2, color="black")
-  
-p
+p<- MyPCA(dds, meta,45, 18, colors, -15,15)
+
 ```
 
-When you remove the targets from analysis, samples cluster completely even more tightly by SAMPLE TYPE! Exactly what we would expect. Those 3 targets are causing the blocker status clustering we see in all other PCA plots shown previously here. Suggests that there are no huge off target effects caused by the blocker that cause large expression differences between blocked/unblocked
+```{r}
+vsd <- varianceStabilizingTransformation(dds, blind=TRUE)
+  PCA<-plotPCA(vsd, intgroup="sampleGroup",returnData=TRUE)
+  PCA$Sample<- meta$Sample
+  
+  #plot
+  p<- ggplot(PCA, aes(x=PC1, y=PC2, color=group))+
+  geom_point(size=5),
+  scale_color_manual(values=colors)
+  theme_classic()+
+  ylim(miny,maxy)+
+  ylab(paste("PC2: ", PC2Variance, "% Variance", sep =""))+
+  xlab(paste("PC1: ", PC1Variance, "% Variance", sep =""))+
+  geom_text(aes(label=Sample),hjust=.5, size= 5,vjust=-1.2, color="black")+
+  theme(axis.text.y   = element_text(size=10, colour = "black"),
+        axis.title.y  = element_text(size=14, colour = "black"),
+        axis.title.x  = element_text(size=14, colour = "black"),
+        axis.text.x  = element_text(size=10, colour = "black"),
+        legend.background = element_rect(fill=NA, size=1, 
+                                         linetype="solid", color="black"),
+        legend.title=element_blank(),
+        legend.key.size = unit(.4, "cm"),
+        legend.spacing.y = unit(0, "mm"),
+        legend.position = c(.9,.892),
+        panel.border = element_rect(colour = "black", fill=NA, size=2))
+```
 
 
 Extract DESeq2 results and visualize with heatmap
@@ -338,23 +264,35 @@ rownames(resOrdered[resOrdered$padj<0.05,])
 
 #normalize results
 rld<- rlog(dds)
+```
 
+Plot heatmap
+```{r}
 #Select top sig DE miRNAs- fewer here than for mature/isomir analysis because there are a lot fewer sig DE miRNAs
-topgenes<- rownames(resOrdered[1:379,])
+topgenes<- rownames(resOrdered[1:50,])
 mat<- assay(rld)[topgenes,]
 mat<- mat - rowMeans(mat)
+colnames(mat)<-paste(PCA$Sample," (",PCA$sampleGroup, ")",sep="")
 
 #Heatmap settings
-subtractFromMin<- 0
-subtractFromMax<- 0
+subtractFromMin<- -.2
+subtractFromMax<- 1
 lengthOut<- 75
 mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
 
 #Create metadata- to be used to color code to show which group the sample belongs to
-metadata<- data.frame(Sample_Group=PCA$sampleGroup, row.names=PCA$name)
+metadata<- data.frame(Group=PCA$sampleGroup, row.names=paste(PCA$Sample," (",PCA$sampleGroup, ")",sep=""),Sample=PCA$Sample)
 
 #plot heatmap
-p<-pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)),show_rownames = FALSE,  border_color= NA,annotation_col = metadata)
+p<-pheatmap(mat, breaks = mat_breaks, 
+            color =inferno(length(mat_breaks-1)),
+            show_rownames = TRUE, show_colnames=FALSE,
+            annotation = metadata,  
+            annotation_colors= list(
+              Group=c(Blocked="firebrick3", Unblocked="turquoise3"),
+              Sample=c(A="goldenrod3", B="grey60", C="skyblue3", D="darkolivegreen4")),
+            fontsize_row = 8,fontsize=12,treeheight_row=0,
+            border_color= "grey45")
 ```
 
 In heatmap of DE results, for A/B, samples cluster by SAMPLE and not BLOCKER STATUS, as we would expect if there are no huge off target effects caused by the blockers. However- C/D still cluster by blocker status. Will look at removing targets+target families, next, see if C/D still cluster by blocker status
@@ -379,7 +317,7 @@ Target_486<- rownames(CL_AT[grep("miR-486", rownames(CL_AT)),])
 Target_25<- rownames(CL_AT[grep("miR-25", rownames(CL_AT)),])
 TargetFamilies<- c(Target_451,Target_486,Target_92, Target_25)
 
-#Using BaseSpace Mature counts matrix that already has the actual targets removed, remove the 8 additional species that are in the same family as the 3 actual targets
+#Remove the 8 additional species that are in the same family as the 3 actual targets
 CL_NoTF<- CL_AT[!(rownames(CL_AT)%in%TargetFamilies),]
 ```
 
@@ -407,14 +345,27 @@ dds<- DESeq(ddsMF)
 #Normalized (variance stabilized transformation), then run PCA
 vsd <- varianceStabilizingTransformation(ddsMF, blind=TRUE)
 PCA<-plotPCA(vsd, intgroup="sampleGroup",returnData=TRUE)
+PCA$Sample<- c("A", "A", "B", "B", "C", "C", "D", "D")
 
 p<- ggplot(PCA, aes(x=PC1, y=PC2, color=group))+
-  geom_point(size=4)+
-  scale_color_manual(values=c("orangered1","springgreen2"))+
+  geom_point(size=5)+
+  scale_color_manual(values=colors)+
   theme_classic()+
   ylim(-15,15)+
-  ggtitle("PCA: Blocker vs no Blocker, Mature Only, Targets + Target Families removed")+
-  geom_text(aes(label=name),hjust=.5, vjust=-1.2, color="black")
+  ylab("PC2: 19% Variance")+
+  xlab("PC1: 46% Variance")+
+  geom_text(aes(label=Sample),hjust=.5, size= 5,vjust=-1.2, color="black")+
+  theme(axis.text.y   = element_text(size=10, colour = "black"),
+        axis.title.y  = element_text(size=14, colour = "black"),
+        axis.title.x  = element_text(size=14, colour = "black"),
+        axis.text.x  = element_text(size=10, colour = "black"),
+        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
+        legend.title=element_blank(),
+        legend.key.size = unit(.4, "cm"),
+        legend.spacing.y = unit(0, "mm"),
+        legend.position = c(.9,.892),
+        panel.border = element_rect(colour = "black", fill=NA, size=2))
+  
   
 p
 ```
@@ -434,24 +385,37 @@ nrow(resOrdered[resOrdered$padj<0.01,])
 rownames(resOrdered[resOrdered$padj<0.05,])
 
 #normalize results
-#rld<- rlog(dds)
+rld<- rlog(dds)
+```
 
-#Select top 25 sig DE miRNAs- fewer here than for mature/isomir analysis because there are a lot fewer sig DE miRNAs
+Plot heatmap
+```{r}
+#Select top sig DE miRNAs- fewer here than for mature/isomir analysis because there are a lot fewer sig DE miRNAs
 topgenes<- rownames(resOrdered[1:20,])
 mat<- assay(rld)[topgenes,]
 mat<- mat - rowMeans(mat)
+colnames(mat)<-paste(PCA$Sample," (",PCA$sampleGroup, ")",sep="")
 
 #Heatmap settings
-subtractFromMin<- 0
-subtractFromMax<- 1
+subtractFromMin<- -.5
+subtractFromMax<- 1.2
 lengthOut<- 75
 mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
 
 #Create metadata- to be used to color code to show which group the sample belongs to
-metadata<- data.frame(Sample_Group=PCA$sampleGroup, row.names=PCA$name)
+metadata<- data.frame(Group=PCA$sampleGroup, row.names=paste(PCA$Sample," (",PCA$sampleGroup, ")",sep=""),Sample=PCA$Sample)
 
 #plot heatmap
-p<-pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)),show_rownames = FALSE, annotation_col = metadata, border_color= NA)
+p<-pheatmap(mat, breaks = mat_breaks, 
+            color =colorRampPalette( c("red", "black", "green"), space="rgb")(100),
+            show_rownames = TRUE, show_colnames=FALSE,
+            annotation = metadata,  
+            annotation_colors= list(
+              Group=c(Blocked="firebrick3", Unblocked="blue3"),
+              Sample=c(A="goldenrod1", B="violetred3", C="skyblue3", D="darkolivegreen4")),
+            fontsize_row = 12,fontsize=12,treeheight_row=0,
+            border_color= NA)
+
 ```
 
 Samples cluster fully by sample type, not blocker status!
