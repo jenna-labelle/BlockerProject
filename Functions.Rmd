@@ -106,5 +106,29 @@ PlotHeatmap<- function(OrderedResults, rld, metadata, nspecies, MinSubtract, Max
   return(p)
 }
 
+
+#Plot log of cpm of raw counts- coloring based on whether it's differentially expressed
+CPMPlot<- function(CPM, Sample){
+  pA<- ggplot(CPM, aes(x=NoBlocker, y=Blocker, color=Color))+
+  geom_point()+
+  geom_abline(slope=1, color="red")+
+  scale_colour_manual(values=c("red","black", "blue"))+
+  theme_classic()+
+  xlab(paste("Log of Unblocked Counts Per Million: Sample ", Sample, sep =""))+
+  ylab(paste("Log of Unblocked Counts Per Million: Sample ", Sample, sep =""))+
+  theme(axis.text.y   = element_text(size=10, colour = "black"),
+        axis.title.y  = element_text(size=14, colour = "black"),
+        axis.title.x  = element_text(size=14, colour = "black"),
+        axis.text.x  = element_text(size=10, colour = "black"),
+        legend.background = element_rect(fill=NA, size=1, 
+                                         linetype="solid", color="black"),
+        legend.title=element_blank(),
+        legend.key.size = unit(.4, "cm"),
+        legend.spacing.y = unit(0, "mm"),
+        legend.position = c(.15,.892),
+        panel.border = element_rect(colour = "black", fill=NA, size=2))
+return (pA)  
+}
+
 ```
 
