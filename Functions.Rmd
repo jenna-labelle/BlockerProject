@@ -132,3 +132,35 @@ return (pA)
 
 ```
 
+
+Variation on the PCA function for adding outline to points
+```{r}
+vsd <- varianceStabilizingTransformation(dds_TNC, blind=TRUE)
+  PCA<-plotPCA(vsd, intgroup="sampleGroup",returnData=TRUE)
+  PCA$Sample<- meta$patient
+  
+  #plot
+  p<- ggplot(PCA, aes(x=PC1, y=PC2))+
+    geom_point(aes(color=group, fill=Sample), shape=21,size=5,stroke=1.5)+
+  scale_color_manual(values=Groupcolors)+
+    scale_fill_manual(values=Samplecolors)+
+    guides(fill = guide_legend(override.aes = list(color = Samplecolors)),
+       color = guide_legend(override.aes = list(shape = 21)))+
+  theme_classic()+
+  ylim(miny,maxy)+
+  ylab(paste("PC2: ", PC2Variance, "% Variance", sep =""))+
+  xlab(paste("PC1: ", PC1Variance, "% Variance", sep =""))+
+  geom_text(aes(label=Sample),hjust=.5, size= 5,vjust=-1.2, color="black")+
+  theme(axis.text.y   = element_text(size=10, colour = "black"),
+        axis.title.y  = element_text(size=14, colour = "black"),
+        axis.title.x  = element_text(size=14, colour = "black"),
+        axis.text.x  = element_text(size=10, colour = "black"),
+        legend.background = element_rect(fill=NA, size=1, 
+                                         linetype="solid", color="black"),
+        legend.title=element_blank(),
+        legend.key.size = unit(.4, "cm"),
+        legend.spacing.y = unit(0, "mm"),
+        legend.position = c(.9,.892),
+        panel.border = element_rect(colour = "black", fill=NA, size=2))
+```
+
