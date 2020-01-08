@@ -21,6 +21,134 @@ suppressPackageStartupMessages(library(colorRamps))
 ```
 
 
+#Functions used in analyses:
+```{r}
+#Create metadata and DESeq2 object, then run DESeq2
+
+RunDESeq2<- function(counts,meta, collapseRep=TRUE) {
+  #create DESeq2 object- just based on samplegroup (blockerstatus)
+  #will add samples to model later (i.e., pairwise analysis)
+  dds<- DESeqDataSetFromMatrix(countData=counts, 
+                               colData=meta, 
+                               design=~sampleGroup)
+  #Collapse technical replicates using internal DESeq2 function
+  if (collapseRep ==TRUE){
+    dds<- collapseReplicates(dds, dds$sample)
+  }
+  
+  #Create model that takes into account sample differences
+  ddsMF<- dds
+  design(ddsMF)<- formula(~patient + sampleGroup)
+  
+  #run DESeq2
+  dds<- DESeq(ddsMF)
+  
+  return(dds)
+}
+
+#Get DE results
+GetDEResults<- function(dds){
+  res<- results(dds)
+  res<- na.omit(res)
+  resOrdered<- res[order(res$padj),]
+  print(nrow(resOrdered[resOrdered$padj<0.05,]))
+  print(nrow(resOrdered[resOrdered$padj<0.01,]))
+  return(resOrdered)
+}
+  
+
+#Create PCA plot
+
+MyPCA<- function(dds, metadata, PC1Variance, PC2Variance, Groupcolors, Samplecolors,miny, maxy) {
+  #Normalized (variance stabilized transformation), then run PCA
+  vsd <- varianceStabilizingTransformation(dds, blind=TRUE)
+  PCA<-plotPCA(vsd, intgroup="sampleGroup",returnData=TRUE)
+  PCA$Sample<- metadata$Sample
+  
+  #plot
+  p<- ggplot(PCA, aes(x=PC1, y=PC2, color=group))+
+  geom_point(size=5)+
+  scale_color_manual(values=colors)+
+  theme_classic()+
+  ylim(miny,maxy)+
+  ylab(paste("PC2: ", PC2Variance, "% Variance", sep =""))+
+  xlab(paste("PC1: ", PC1Variance, "% Variance", sep =""))+
+  geom_text(aes(label=Sample),hjust=.5, size= 5,vjust=-1.2, color="black")+
+  theme(axis.text.y   = element_text(size=10, colour = "black"),
+        axis.title.y  = element_text(size=14, colour = "black"),
+        axis.title.x  = element_text(size=14, colour = "black"),
+        axis.text.x  = element_text(size=10, colour = "black"),
+        legend.background = element_rect(fill=NA, size=1, 
+                                         linetype="solid", color="black"),
+        legend.title=element_blank(),
+        legend.key.size = unit(.4, "cm"),
+        legend.spacing.y = unit(0, "mm"),
+        legend.position = c(.9,.892),
+        panel.border = element_rect(colour = "black", fill=NA, size=2))
+  return(p)
+}
+
+
+#Plot heatmap: takes as input DE results (padj ordered lowest to highest, rlog transformed data, metadata (blocker status and Sample type), number of miRNA species to be included, and min and max subtract (used for heatmap aesthetics))
+
+PlotHeatmap<- function(OrderedResults, rld, metadata, nspecies, MinSubtract, MaxSubtract, fontsize){
+  #Select top sig DE miRNAs
+  topgenes<- rownames(OrderedResults[1:nspecies,])
+  mat<- assay(rld)[topgenes,]
+  mat<- mat - rowMeans(mat)
+  colnames(mat)<-paste(metadata$Sample," (",metadata$sampleGroup, ")",sep="")
+  
+  #Heatmap settings
+  mat_breaks<- seq(min(mat-MinSubtract), max(mat-MaxSubtract), length.out=75)
+
+  #Create metadata- to be used to color code to show which group the sample belongs to
+  metadata<- data.frame(Group=metadata$sampleGroup, 
+                        row.names=paste(metadata$Sample," (",metadata$sampleGroup, ")",sep=""),
+                        Sample=metadata$Sample)
+
+  #plot heatmap
+  p<-pheatmap(mat, breaks = mat_breaks, 
+            color =colorRampPalette( c("red", "black", "green"), space="rgb")(100),
+            show_rownames = TRUE, show_colnames=FALSE,
+            annotation = metadata,  
+            annotation_colors= list(
+              Group=c(Blocked="firebrick3", Unblocked="blue3"),
+                      Sample=c(A="goldenrod1", 
+                               B="violetred3", 
+                               C="skyblue3", 
+                               D="darkolivegreen4")),
+            fontsize_row = fontsize,fontsize=12,treeheight_row=0,
+            border_color= NA)
+  return(p)
+}
+
+
+#Plot log of cpm of raw counts- coloring based on whether it's differentially expressed
+CPMPlot<- function(CPM, Sample){
+  pA<- ggplot(CPM, aes(x=NoBlocker, y=Blocker, color=Color))+
+  geom_point()+
+  geom_abline(slope=1, color="red")+
+  scale_colour_manual(values=c("red","black", "blue"))+
+  theme_classic()+
+  xlab(paste("Log of Unblocked Counts Per Million: Sample ", Sample, sep =""))+
+  ylab(paste("Log of Unblocked Counts Per Million: Sample ", Sample, sep =""))+
+  theme(axis.text.y   = element_text(size=10, colour = "black"),
+        axis.title.y  = element_text(size=14, colour = "black"),
+        axis.title.x  = element_text(size=14, colour = "black"),
+        axis.text.x  = element_text(size=10, colour = "black"),
+        legend.background = element_rect(fill=NA, size=1, 
+                                         linetype="solid", color="black"),
+        legend.title=element_blank(),
+        legend.key.size = unit(.4, "cm"),
+        legend.spacing.y = unit(0, "mm"),
+        legend.position = c(.15,.892),
+        panel.border = element_rect(colour = "black", fill=NA, size=2))
+return (pA)  
+}
+
+```
+
+
 #Two different input sources: 
 
 *1) count matrix from BaseSpace (miRDeep2, no mismatches, isomirs and mature together) --> Downsampled to lowest read count
@@ -47,7 +175,7 @@ Matrix #1 used initially, but after determining that a mismatch of 1 should be a
 
 -Samples A and B have 3 technical replicates, for both blocked and unblocked groups. These technical replicates are collapsed using an internal DESeq2 function. These technical replicates have varying RNA input amounts into library construction, but this was determined to have no effect on the resulting libraries (See ___.Rmd). This is additionally confirmed by PCA clustering here.
 
-Read in data (), reformat:
+#Read in count data, reformat:
 ```{r}
 #Set working directory
 wd<- "//Cifs2/rcdata$/Channing_miRNA_Blocker_Test/BlockerProject/BlockerProject/"
@@ -76,7 +204,8 @@ detach("package:DESeq")
 
 General plotting variables
 ```{r}
-colors<- c("firebrick3","turquoise3")
+Groupcolors<- c("firebrick3","blue3")
+Samplecolors<- c("goldenrod1","violetred3", "skyblue3", "darkolivegreen4")
 
 metadata<- data.frame(sampleGroup=rep(c("Unblocked", "Blocked"),4), Sample=c("A", "A", "B", "B", "C", "C", "D", "D"))
 ```
@@ -92,13 +221,13 @@ Prep data for DESeq2, create metadata and DESeq2 object, then run DESeq2:
 #rename rows, removing input info
 colnames(CL_Downsampled)<- c(rep("A.0", 3), rep("B.0", 3), "C.0", "D.0", rep("A.1", 3), rep("B.1", 3), "C.1", "D.1")
 
-#Create metadata- will be used in all analyses:
+#Create metadata- will be used in all analyses- when collapsing technical replicates and when leaving separate:
 sampleGroup<- as.factor(c(rep("Unblocked", 8), rep("Blocked", 8))) #set blocker status
 Sample<- colnames(CL_Downsampled) #this column is used to collapse technical replicates
 patient<- as.factor(c(rep("A", 3), rep("B", 3), "C", "D", rep("A", 3), rep("B", 3), "C", "D")) #this column is to control for sample to sample differences
 meta<- data.frame(sample, sampleGroup, patient)
 
-#Run DESeq2: custom functions can be found in Functions.Rmd file
+#Run DESeq2- using custom function
 #Technical replicates are collapsed and pairwise analysis performed
 
 dds<- RunDESeq2(CL_Downsampled, meta, TRUE)
@@ -169,7 +298,7 @@ Visualize DE results with heatmap:
 #normalize results
 rld<- rlog(dds)
 
-p<-PlotHeatmap(resOrdered,rld, metadata,30, -.2,1)
+p<-PlotHeatmap(resOrdered,rld, metadata,100, -.2,1,12)
 ```
 
 Blocked/unblocked samples cluster together, as expected. Samples A/B and C/D also cluster together, as seen in the PCA results
@@ -210,8 +339,7 @@ Visualize sample differences using PCA
 #Normalized (variance stabilized transformation), then run PCA
 plotPCA(varianceStabilizingTransformation(dds, blind=TRUE), intgroup="sampleGroup")
 
-p<- MyPCA(dds, meta,45, 18, colors, -15,15)
-
+p<- MyPCA(dds, metadata,45, 18, colors, -15,15)
 ```
 
 
@@ -287,7 +415,7 @@ rld<- rlog(dds)
 
 Plot heatmap
 ```{r}
-p<-PlotHeatmap(resOrdered, rld, metadata, 20, -.2,1.2,10)
+p<-PlotHeatmap(resOrdered, rld, metadata, 20, -.2,1.2,14)
 
 ```
 
@@ -355,7 +483,6 @@ CPMLogA$Blocker<- rowMeans(CPMLogA[,4:6])
 CPMLogA<- CPMLogA[,c(8,9,7)]
 
 pA<- CPMPlot(CPMLogA, "A")
-
 ```
 
 Most species follow the same general trend for both blocked and unblocked- i.e., overall similar expression pattern. EXCEPT for the targets (plus a few off target effects) 
@@ -479,25 +606,23 @@ blocker_sig_AvB<-blocker_AvB[blocker_AvB$padj<0.05,]
 #25% increase in the number of DE genes!!
 
 #What's the improvement if we consider padj<0.01 to be sig?
-noblocker_sig.01_AvB<-noblocker_AvB[noblocker_AvB$padj<0.1,]
-blocker_sig.01_AvB<-blocker_AvB[blocker_AvB$padj<0.1,]
+noblocker_sig.01_AvB<-noblocker_AvB[noblocker_AvB$padj<0.01,]
+blocker_sig.01_AvB<-blocker_AvB[blocker_AvB$padj<0.01,]
 (nrow(blocker_sig.01_AvB)-nrow(noblocker_sig.01_AvB))/nrow(blocker_sig.01_AvB)
-#34% improvement
+#20% improvement
 ```
 
-When using downsampled counts, you get an even greater number of DE miRNAs. Makes sense, right? The blocker gives you more species with really low abundance in the sample, but that improvement is partially masked bc there's more reads for the no blocker samples. When you get rid of that advantage, you can see the blocker improvement even more clearly.
-
-Something that might be interesting to look at- where do these 2 sets of DE miRNAs differ? If the reasoning above is correct, most should be the same and a lot of the ones that differ should have pretty low overall counts
+Where do these 2 sets of DE miRNAs differ? We might expect that most should be the same and a lot of the ones that differ should have pretty low overall counts
 
 ```{r}
-DEInBoth<- rownames(blocker_sig.01_AvB) %in% rownames(noblocker_sig.01_AvB)
+DEInBoth<- rownames(as.data.frame(blocker_sig_AvB)) %in% rownames(as.data.frame(noblocker_sig_AvB))
 sum(DEInBoth)
-#87 of the 114 unblocked DE species are also in the blocked DE species (75%)
-#So of the 164 blocked DE species, 77 are unique to blocked
-#And of the 114 unblocked DE species, 27 are unique to unblocked
+#63 of the 89 unblocked DE species are also in the blocked DE species (70%)
+#So of the 119 blocked DE species, 56 are unique to blocked
+#And of the 89 unblocked DE species, 26 are unique to unblocked
 
-#get DE species unique to blocked
-OnlyBlockerDE<- blocker_sig.01_AvB[!DEInBoth,]
+#get 56 DE species unique to blocked
+OnlyBlockerDE<- blocker_sig_AvB[!DEInBoth,]
 
 #looking at raw counts of these DE miRNAs
 counts_onlyblockersDE<- CL_Downsampled[rownames(CL_Downsampled) %in% rownames(OnlyBlockerDE),]
@@ -507,38 +632,37 @@ counts_onlyblockersDE<-counts_onlyblockersDE[order(counts_onlyblockersDE$A.0, de
 
 ```{r}
 #Median read count for ALL blocker DE species:
-mean(rowMedians(as.matrix(CL_Downsampled[rownames(blocker_sig.01_AvB),])))
-#14,035
+mean(rowMedians(as.matrix(CL_Downsampled[rownames(blocker_sig_AvB),])))
+#18,748
 
 mean(rowMedians(as.matrix(counts_onlyblockersDE)))
-#15,620
+#21,147
 
 #Excluding hsa-miR-92a (target, likely only DE due to differing efficiency in A vs B samples):
 mean(rowMedians(as.matrix(counts_onlyblockersDE)[-1,]))
-#1,197
+#1,317
 
 ```
 
-So overall: if you exclude miR-92a, the blocker-specific DE miRNAs have a much lower raw read count than the entire set of DE miRNAs. This suggests that these miRNAs are DE due to the increased ability to detect very lowly expressed miRNAs. This idea will be looked at more closely in "FINAL_BlockerImprovements.Rmd"
-
+So overall: if you exclude miR-92a, the blocker-specific DE miRNAs have a much lower raw read count than the entire set of DE miRNAs. This suggests that these miRNAs are DE due to the increased ability to detect very lowly expressed miRNAs. 
 
 Looking at unblocked-specific DE miRNAs:
 ```{r}
 #get DE species unique to blocked
-DEInBoth<- rownames(noblocker_sig.01_AvB) %in% rownames(blocker_sig.01_AvB)
-OnlyNoBlockerDE<- noblocker_sig.01_AvB[!DEInBoth,]
+DEInBoth<- rownames(noblocker_sig_AvB) %in% rownames(blocker_sig_AvB)
+OnlyNoBlockerDE<- noblocker_sig_AvB[!DEInBoth,]
 
 #looking at raw counts of these DE miRNAs
 counts_onlynoblockersDE<- CL_Downsampled[rownames(CL_Downsampled) %in% rownames(OnlyNoBlockerDE),]
 counts_onlynoblockersDE<- counts_onlynoblockersDE[,c(1:6,9:14)]
 counts_onlynoblockersDE<-counts_onlynoblockersDE[order(counts_onlynoblockersDE$A.0, decreasing=TRUE),]
 
-#Median read count for ALL blocker DE species:
+#Median read count for ALL noblocker DE species:
 mean(rowMedians(as.matrix(CL_Downsampled[rownames(noblocker_sig_AvB),])))
 #9730
 
 mean(rowMedians(as.matrix(counts_onlynoblockersDE)))
-#3648
+#2966
 
 #No targets in these 8 no blocker specific miRNAs
 ```
@@ -549,26 +673,70 @@ Overall, much higher total read counts for no blocker-specific sig DE miRNAs. Su
 In original, targets-included CL analysis, there were 25 DE miRNAs at padj<0.01. How many of these are target or target families? How many were downregulated in blocker group? What were the mean raw counts for these?
 
 ```{r}
+#Get 25 differentially expressed miRNAs from targets included analysis
 OT<- as.data.frame(PotentialOffTargets[,c(2,6)])
+
+#Add in raw count data for these miRNAs
 RawCounts<- as.data.frame(rowMeans(CL_Downsampled[rownames(CL_Downsampled) %in% rownames(OT),]))
 OT<- merge(OT, RawCounts, by=0)
 colnames(OT)<- c("Species", "log2FoldChange", "padj", "MeanRawCounts")
+
+#Annotate by blocker/blocker family status
 OT$Target<- OT$Species %in% ActualTargets
 OT$TargetFamily<- OT$Species %in% TargetFamilies
 OT$EitherTarget_TargetFamily<- as.logical(rowSums(OT[,c(5,6)]))
+
+#Annotate with padj information
 OT$log2padj<- log2(OT$padj)
 ```
 
 ```{r}
 #plot
-p<-ggplot(OT,aes(x=log2FoldChange, y= padj))+
-  geom_point(aes(size=MeanRawCounts, fill= EitherTarget_TargetFamily),colour="black",pch=21)+
-  scale_size_continuous(range = c(1.5, 35))+
-  scale_color_manual(values=c("black", "black")) +
+p<-ggplot(OT,aes(x=log2FoldChange, y= padj, color=EitherTarget_TargetFamily))+
+  geom_point(aes(size=MeanRawCounts))+
+  scale_size_continuous(range = c(1.5, 35), guide=FALSE)+
+  scale_color_manual(values=colors)+
   scale_x_continuous(limits = c(-6, 7))+
   scale_y_continuous(limits = c(-0.008, .05))+
-  theme_classic()
+  theme_classic()+
+  xlab("log2 foldchange of differential expression")+
+  ylab("Adjusted p value")+
+  geom_vline(xintercept=0,linetype="dotted", color= "black", size=1.25)+
+  guides(colour = guide_legend(override.aes = list(size=5)))+
+  theme(axis.text.y   = element_text(size=10, colour = "black"),
+        axis.title.y  = element_text(size=14, colour = "black"),
+        axis.title.x  = element_text(size=14, colour = "black"),
+        axis.text.x  = element_text(size=10, colour = "black"),
+        legend.background = element_rect(fill=NA, size=1, 
+                                         linetype="solid", color="black"),
+         legend.title=element_blank(),
+        legend.key.size = unit(.4, "cm"),
+        legend.spacing.y = unit(0, "mm"),
+        legend.position = c(.8,.93),
+        panel.border = element_rect(colour = "black", fill=NA, size=2))
 p
+
+
+
+ p<- ggplot(PCA, aes(x=PC1, y=PC2, color=group))+
+  geom_point(size=5)+
+  scale_color_manual(values=colors)+
+  theme_classic()+
+  ylim(miny,maxy)+
+  ylab(paste("PC2: ", PC2Variance, "% Variance", sep =""))+
+  xlab(paste("PC1: ", PC1Variance, "% Variance", sep =""))+
+  geom_text(aes(label=Sample),hjust=.5, size= 5,vjust=-1.2, color="black")+
+  theme(axis.text.y   = element_text(size=10, colour = "black"),
+        axis.title.y  = element_text(size=14, colour = "black"),
+        axis.title.x  = element_text(size=14, colour = "black"),
+        axis.text.x  = element_text(size=10, colour = "black"),
+        legend.background = element_rect(fill=NA, size=1, 
+                                         linetype="solid", color="black"),
+        legend.title=element_blank(),
+        legend.key.size = unit(.4, "cm"),
+        legend.spacing.y = unit(0, "mm"),
+        legend.position = c(.9,.892),
+        panel.border = element_rect(colour = "black", fill=NA, size=2))
 ```
 
 Write potential off targets to file
