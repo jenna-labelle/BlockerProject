@@ -16,6 +16,103 @@ suppressPackageStartupMessages(library(grid))
 suppressPackageStartupMessages(library(gridExtra))
 ```
 
+Functions
+```{r}
+#For plottting expression levels of targets
+PlotExpressionLevels<- function(PercentMapToTargets, ylab){
+  p<- ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=Sample, fill=BlockerStatus))+
+  geom_bar(stat="identity", position="dodge")+ 
+  theme_classic()+
+  ylab(ylab)+
+  xlab("")+
+  scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="blue3"))+
+  ylim (0,100)+
+  theme(axis.text.y   = element_text(size=10, colour = "black"),
+        axis.title.y  = element_text(size=12),
+        axis.title.x  = element_text(size=14),
+        panel.border = element_rect(colour = "black", fill=NA, size=2),
+        legend.title=element_blank(),
+        legend.position = c(.1,.94),
+        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
+        axis.text.x.bottom  =element_text(size=15),
+        legend.key.size = unit(.4, "cm"),
+        legend.spacing.y = unit(0, "mm"))
+  return(p)
+}
+
+#For plotting expression levels of targets, broken down by target
+PlotIndividualExpressionLevels<- function(PercentMapToTargets, ylab){
+  p<- ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, fill=BlockerStatus))+
+  geom_bar(stat="identity", position="dodge")+ 
+  theme_classic()+
+  ylab(ylab)+
+  xlab("")+
+  ylim (0,100)+
+  scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="blue3"))+
+  facet_wrap(~species,nrow=1)+
+  theme(axis.text.y   = element_text(size=10, colour = "black"),
+        axis.title.y  = element_text(size=12),
+        axis.title.x  = element_text(size=14),
+        panel.border = element_rect(colour = "black", fill=NA, size=2), 
+                       strip.background = element_blank(),
+        legend.title=element_blank(),
+        legend.position = c(.1,.92),
+        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
+        axis.text.x.bottom  =element_text(color="black", size=15),
+        legend.key.size = unit(.4, "cm"),
+        legend.spacing.y = unit(0, "mm"),
+        strip.text = element_text(face="bold"))
+  return(p)
+  
+}
+
+#For plotting without collapsing technical replicates
+
+PlotUncollapsedExpression<- function(PercentMapToTargets, ylab){
+  p<-ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, fill=BlockerStatus))+
+  geom_bar(stat="identity", position="dodge")+ 
+  theme_classic()+
+  ylab(ylab)+
+  xlab("")+
+  ylim (0,100)+
+  scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="blue3"))+
+  theme(axis.text.y   = element_text(size=10, colour = "black"),
+        axis.title.y  = element_text( size=12),
+        axis.title.x  = element_text(size=14),
+        panel.border = element_rect(colour = "black", fill=NA, size=2),
+        legend.title=element_blank(),
+        legend.position = c(.1,.92),
+        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
+        legend.key.size = unit(.4, "cm"),
+        axis.text.x.bottom  =element_text(color= "black",size=15),
+        legend.spacing.y = unit(0, "mm"),
+        legend.spacing.x = unit(0, "mm"))
+  return(p)
+}
+
+
+
+ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, fill=BlockerStatus))+
+  geom_bar(stat="identity", position="dodge")+ 
+  theme_classic()+
+  ylab("Percent of reads mapping to all target miRNAs")+
+  xlab("")+
+  ylim (0,100)+
+  scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="blue3"))+
+  theme(axis.text.y   = element_text(size=10, colour = "black"),
+        axis.title.y  = element_text( size=12),
+        axis.title.x  = element_text(size=14),
+        panel.border = element_rect(colour = "black", fill=NA, size=2),
+        legend.title=element_blank(),
+        legend.position = c(.1,.892),
+        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
+        legend.key.size = unit(.4, "cm"),
+        axis.text.x.bottom  =element_text(color= "black",size=15),
+        legend.spacing.y = unit(0, "mm"),
+        legend.spacing.x = unit(0, "mm"))
+
+```
+
 #BaseSpace Data
 ################
 Read in data. Data from basespace mirdeep2 analysis (no mismatches allowed for mature, isomirs included) and then downsampled (see Final_DifferentialExpression_BlockerProject.Rmd)
@@ -61,50 +158,24 @@ PercentMapToTargets$ID<- rownames(PercentMapToTargets)
 colnames(PercentMapToTargets)<-c("PercentMapToTarget", "ID")
 PercentMapToTargets$BlockerStatus<- c(rep("Unblocked", 4), rep("Blocked", 4))
 PercentMapToTargets$Sample<-rep(c("A", "B", "C", "D"),2)
-PercentMapToTargets
 ```
 
 
 
 Finally, visualize this change for all 4 samples from blocker to no blocker
 ```{r}
-#Title: PercentMapping_Basespace_MatureIsomirs_TechCollapsed_TargetFamilies
-
-p<- ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=Sample, fill=BlockerStatus))+
-  geom_bar(stat="identity", position="dodge")+ 
-  theme_classic()+
-  ylab("Percent of reads mapping to target miRNAs or species in target families \n (allowing for mismatches at 5'/3' ends)")+
-  xlab("")+
-  scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="turquoise3"))+
-  ylim (0,100)+
-  theme(axis.text.y   = element_text(size=10, colour = "black"),
-        axis.title.y  = element_text(size=12),
-        axis.title.x  = element_text(size=14),
-        panel.border = element_rect(colour = "black", fill=NA, size=2),
-        legend.title=element_blank(),
-        legend.position = c(.1,.892),
-        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
-        axis.text.x.bottom  =element_text(size=15),
-        legend.key.size = unit(.4, "cm"),
-        legend.spacing.y = unit(0, "mm"))
-  
-        
-p
-             
+p<- PlotExpressionLevels(PercentMapToTargets,ylab="Percent of reads mapping to target miRNAs or species in target families (isomir matches allowed)")
 ```
 
 #Repeating the above graph, but with only mature species
 
-Select mature species
 ```{r}
+#Select mature species
 BaseSpace_MatureCounts<- BS_CollapsedCounts[grep("R", rownames(BS_CollapsedCounts)),]
 let7<- BS_CollapsedCounts[grep("let", rownames(BS_CollapsedCounts)),]
 BaseSpace_MatureCounts<- rbind(BaseSpace_MatureCounts, let7)
 BaseSpace_MC<- BaseSpace_MatureCounts
-```
 
-
-```{r}
 #get total counts for these targets in all samples
 targetCounts<- BaseSpace_MC[rownames(BaseSpace_MC)%in% TargetFamilies,]
 SumTargetCounts<- colSums(targetCounts)
@@ -115,39 +186,32 @@ PercentMapToTargets$ID<- rownames(PercentMapToTargets)
 colnames(PercentMapToTargets)<-c("PercentMapToTarget", "ID")
 PercentMapToTargets$BlockerStatus<- c(rep("Unblocked", 4), rep("Blocked", 4))
 PercentMapToTargets$Sample<-rep(c("A", "B", "C", "D"),2)
-PercentMapToTargets
+
+#plot
+p<- PlotExpressionLevels(PercentMapToTargets,"Percent of reads mapping to target miRNAs or species in target families (exact matches only)" )
 ```
 
+#Mature Only, only looking at actual targets
 ```{r}
-#Title: PercentMapping_Basespace_MatureOnly_TechCollapsed_TargetFamilies
-p<- ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=Sample, fill=BlockerStatus))+
-  geom_bar(stat="identity", position="dodge")+ 
-  theme_classic()+
-  ylab("Percent of reads mapping to target miRNAs or species in target families \n (perfect matches only)")+
-  xlab("")+
-  ylim (0,100)+
-  scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="turquoise3"))+
-  theme(axis.text.y   = element_text(size=10, colour = "black"),
-        axis.title.y  = element_text(size=12),
-        axis.title.x  = element_text(size=14),
-        panel.border = element_rect(colour = "black", fill=NA, size=2),
-        legend.title=element_blank(),
-        legend.position = c(.1,.892),
-        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
-        axis.text.x.bottom  =element_text(color="black", size=15),
-        legend.key.size = unit(.4, "cm"),
-        legend.spacing.y = unit(0, "mm"))
-  
-        
-p
+#get total counts for these targets in all samples
+targetCounts<- BaseSpace_MC[rownames(BaseSpace_MC)%in% ActualTargets,]
+SumTargetCounts<- colSums(targetCounts)
+
+#Get percentage of total counts that map to targets
+PercentMapToTargets<-as.data.frame(SumTargetCounts/colSums(BaseSpace_MC) *100)
+PercentMapToTargets$ID<- rownames(PercentMapToTargets)
+colnames(PercentMapToTargets)<-c("PercentMapToTarget", "ID")
+PercentMapToTargets$BlockerStatus<- c(rep("Unblocked", 4), rep("Blocked", 4))
+PercentMapToTargets$Sample<-rep(c("A", "B", "C", "D"),2)
+
+#Plot
+p<- PlotExpressionLevels(PercentMapToTargets, "Percent of reads mapping to target miRNAs (exact matches only)")
 ```
 
-#Repeating the two above graphs, but not collapsing technical replicates
+#Repeating the above graphs, but not collapsing technical replicates
 
 Mature and Isomirs
 ```{r}
-#Plot: PercentMapping_Basespace_MatureIsomir_TechNotCollapsed_TargetFamilies
-
 #get total counts for these targets in all samples
 targetCounts<- BaseSpaceDownSampled_Counts[rownames(BaseSpaceDownSampled_Counts)%in% TargetFamilies,]
 SumTargetCounts<- colSums(targetCounts)
@@ -162,34 +226,11 @@ PercentMapToTargets$BlockerStatus<- c(rep("Unblocked", 8), rep("Blocked", 8))
 PercentMapToTargets$ID<- rep(c("A.1", "A.2", "A.3", "B.1", "B.2", "B.3", "C", "D"),2) 
 
 #plot
-p<- ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, fill=BlockerStatus))+
-  geom_bar(stat="identity", position="dodge")+ 
-  theme_classic()+
-  ylab("Percent of reads mapping to target miRNAs or species in target families \n (allowing for mismatches at 5'/3' ends)")+
-  xlab("")+
-  ylim (0,100)+
-  scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="turquoise3"))+
-  theme(axis.text.y   = element_text(size=10, colour = "black"),
-        axis.title.y  = element_text( size=12),
-        axis.title.x  = element_text(size=14),
-        panel.border = element_rect(colour = "black", fill=NA, size=2),
-        legend.title=element_blank(),
-        legend.position = c(.1,.892),
-        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
-        axis.text.x.bottom  =element_text(color="black", size=15),
-        legend.key.size = unit(.4, "cm"),
-        legend.spacing.y = unit(0, "mm"))
-  
-
-     
-p     
-
+p<- PlotUncollapsedExpression(PercentMapToTargets, "Percent of reads mapping to target miRNAs or species in target families (isomirs allowed)")
 ```
 
 Only mature species:
 ```{r}
-#Plot: PercentMapping_Basespace_MatureOnly_TechNotCollapsed_TargetFamilies
-
 #Select Mature
 BaseSpace_MatureCounts<- BaseSpaceDownSampled_Counts[grep("R", rownames(BaseSpaceDownSampled_Counts)),]
 let7<- BaseSpaceDownSampled_Counts[grep("let", rownames(BaseSpaceDownSampled_Counts)),]
@@ -205,33 +246,13 @@ PercentMapToTargets<-as.data.frame(SumTargetCounts/colSums(BaseSpace_MC) *100)
 PercentMapToTargets$ID<- rownames(PercentMapToTargets)
 colnames(PercentMapToTargets)<-c("PercentMapToTarget", "ID")
 PercentMapToTargets$BlockerStatus<- c(rep("Unblocked", 8), rep("Blocked", 8))
-PercentMapToTargets
 
 #Rename samples 
 PercentMapToTargets$ID<- rep(c("A.1", "A.2", "A.3", "B.1", "B.2", "B.3", "C", "D"),2) 
 
 
 #plot
-p<- ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, fill=BlockerStatus))+
-  geom_bar(stat="identity", position="dodge")+ 
-  theme_classic()+
-  ylab("Percent of reads mapping to target miRNAs or species in target families \n (perfect matches only)")+
-  xlab("")+
-  ylim (0,100)+
-  scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="turquoise3"))+
-  theme(axis.text.y   = element_text(size=10, colour = "black"),
-        axis.title.y  = element_text(size=12),
-        axis.title.x  = element_text(size=14),
-        panel.border = element_rect(colour = "black", fill=NA, size=2),
-        legend.title=element_blank(),
-        legend.position = c(.1,.892),
-        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
-        axis.text.x.bottom  =element_text(color="black", size=15),
-        legend.key.size = unit(.4, "cm"),
-        legend.spacing.y = unit(0, "mm"))
-  
-
-p
+p<- PlotUncollapsedExpression(PercentMapToTargets, "Percent of reads mapping to target miRNAs or species in target families (exact matches only)")
 ```
 
 
@@ -240,8 +261,6 @@ p
 mature only --> Get reads mapped to each of the three targets in blocked vs unblocked
 
 ```{r}
-#Title: PercentMapping_Basespace_MatureOnly_TechCollapsed_IndividualTargets
-
 #Select mature from collapsed data set
 BaseSpace_MatureCounts<- BS_CollapsedCounts[grep("R", rownames(BS_CollapsedCounts)),]
 let7<- BS_CollapsedCounts[grep("let", rownames(BS_CollapsedCounts)),]
@@ -271,30 +290,8 @@ PercentMapToTargets$ID<- rep(c("A", "B", "C", "D"),2)
 colnames(PercentMapToTargets)<-c("PercentMapToTarget", "species", "ID")
 PercentMapToTargets$BlockerStatus<- c(rep("Unblocked", 4), rep("Blocked", 4))
 
-
-
-p<- ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, fill=BlockerStatus))+
-  geom_bar(stat="identity", position="dodge")+ 
-  theme_classic()+
-  ylab("Percent of reads mapping to each target \n (perfect matches only)")+
-  xlab("")+
-  ylim (0,100)+
-  scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="turquoise3"))+
-  facet_wrap(~species,nrow=1)+
-  theme(axis.text.y   = element_text(size=10, colour = "black"),
-        axis.title.y  = element_text(size=12),
-        axis.title.x  = element_text(size=14),
-        panel.border = element_rect(colour = "black", fill=NA, size=2), strip.background = element_blank(),
-        legend.title=element_blank(),
-        legend.position = c(.1,.892),
-        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
-        axis.text.x.bottom  =element_text(color="black", size=15),
-        legend.key.size = unit(.4, "cm"),
-        legend.spacing.y = unit(0, "mm"),
-        strip.text = element_text(face="bold"))
-  
-
-p
+#plot
+p<- PlotIndividualExpressionLevels(PercentMapToTargets, "Percent of reads mapping to each target (exact matches only)")
 ```
 
 Overall: mir-486 is blocked very well, mir-92 is blocked pretty well, and mir-451a is hardly even expressed
@@ -304,8 +301,6 @@ However- this is for the mature species only. Blockers could also be affecting i
 Repeating the above graph, but including isomirs:
 
 ```{r}
-#Title: PercentMapping_Basespace_MatureIsomirs_TechCollapsed_IndividualTargets
-
 #get number of reads mapping to 3 targets
 mir451_Both<- BS_CollapsedCounts[rownames(BS_CollapsedCounts) %in% c("hsa-miR-451a", "hsa-mir-451a"),]
 mir451<- as.data.frame(colSums(mir451_Both))
@@ -334,30 +329,8 @@ PercentMapToTargets$ID<- rep(c("A", "B", "C", "D"),2)
 colnames(PercentMapToTargets)<-c("PercentMapToTarget", "species", "ID")
 PercentMapToTargets$BlockerStatus<- c(rep("Unblocked", 4), rep("Blocked", 4))
 
-
-
-p<- ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, fill=BlockerStatus))+
-  geom_bar(stat="identity", position="dodge")+ 
-  theme_classic()+
-  ylab("Percent of reads mapping to each target \n (allowing for mismatches at 5'/3' ends)")+
-  xlab("")+
-  ylim (0,100)+
-  scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="turquoise3"))+
-  facet_wrap(~species,nrow=1)+
-  theme(axis.text.y   = element_text(size=10, colour = "black"),
-        axis.title.y  = element_text( size=12),
-        axis.title.x  = element_text(size=14),
-        panel.border = element_rect(colour = "black", fill=NA, size=2), strip.background = element_blank(),
-        legend.title=element_blank(),
-        legend.position = c(.1,.88),
-        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
-        axis.text.x.bottom  =element_text(color="black", size=15),
-        legend.key.size = unit(.4, "cm"),
-        legend.spacing.y = unit(0, "mm"),
-        strip.text = element_text(face="bold"))
-  
-
-p
+#Plot
+p<- PlotIndividualExpressionLevels(PercentMapToTargets, "Percent of reads mapping to each target (isomirs allowed)")
 ```
 
 Blockers don't seem to be quite so effective on isomirs as they are on mature, but we still see a large drop in target reads with the use of blockers. 
@@ -413,8 +386,8 @@ SumTargetCounts<- colSums(targetCounts)
 
 #Get percentage of total counts that map to targets
 PercentMapToTargets<-as.data.frame(SumTargetCounts/colSums(CL_CollapsedCounts) *100)
-PercentMapToTargets$ID<- rep(c("A", "B", "C", "D"),2)
-colnames(PercentMapToTargets)<-c("PercentMapToTarget", "ID")
+PercentMapToTargets$Sample<- rep(c("A", "B", "C", "D"),2)
+colnames(PercentMapToTargets)<-c("PercentMapToTarget", "Sample")
 PercentMapToTargets$BlockerStatus<- c(rep("Unblocked", 4), rep("Blocked", 4))
 PercentMapToTargets
 ```
@@ -422,28 +395,7 @@ PercentMapToTargets
 
 Finally, visualize this change for all 4 samples from blocker to no blocker
 ```{r}
-#Title: PercentMapping_CL_TechCollapsed_TargetFamilies
-p<- ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, fill=BlockerStatus))+
-  geom_bar(stat="identity", position="dodge")+ 
-  theme_classic()+
-  ylab("Percent of reads mapping to \n target miRNAs or miRNAs in target families")+
-  xlab("")+
-  ylim (0,100)+
-  scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="turquoise3"))+
-  theme(axis.text.y   = element_text(size=10, colour = "black"),
-        axis.title.y  = element_text( size=12),
-        axis.title.x  = element_text(size=14),
-        panel.border = element_rect(colour = "black", fill=NA, size=2),
-        legend.title=element_blank(),
-        legend.position = c(.1,.892),
-        legend.background = element_rect(fill=NA, colour = "black", size=1),
-        axis.text.x.bottom  =element_text(color= "black", size=15),
-        legend.spacing.y = unit(0, "mm"),
-        legend.spacing.x = unit(0, "mm"))
-  
-        
-p
-             
+p<-PlotExpressionLevels(PercentMapToTargets, "Percent of reads mapping to target miRNAs or miRNAs in target families (1 mismatch allowed)")
 ```
 
 
@@ -458,39 +410,16 @@ SumTargetCounts<- colSums(targetCounts)
 
 #Get percentage of total counts that map to targets
 PercentMapToTargets<-as.data.frame(SumTargetCounts/colSums(CL_CollapsedCounts) *100)
-PercentMapToTargets$ID<- rep(c("A", "B", "C", "D"),2)
-colnames(PercentMapToTargets)<-c("PercentMapToTarget", "ID")
+PercentMapToTargets$Sample<- rep(c("A", "B", "C", "D"),2)
+colnames(PercentMapToTargets)<-c("PercentMapToTarget", "Sample")
 PercentMapToTargets$BlockerStatus<- c(rep("Unblocked", 4), rep("Blocked", 4))
-PercentMapToTargets
+
+#plot
+p<- PlotExpressionLevels(PercentMapToTargets,"Percent of reads mapping to target miRNAs (1 mismatch allowed)" )
 ```
 
+#Repeating the above graph, but not collapsing technical replicates
 ```{r}
-#Title: PercentMapping_CL_TechCollapsed_ActualTargets
-p<- ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, fill=BlockerStatus))+
-  geom_bar(stat="identity", position="dodge")+ 
-  theme_classic()+
-  ylab("Percent of reads mapping to \n target miRNAs or miRNAs in target families")+
-  xlab("")+
-  ylim (0,100)+
-  scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="turquoise3"))+
-  theme(axis.text.y   = element_text(size=10, colour = "black"),
-        axis.title.y  = element_text(size=12),
-        axis.title.x  = element_text(size=14),
-        panel.border = element_rect(colour = "black", fill=NA, size=2),
-        legend.title=element_blank(),
-        legend.position = c(.1,.892),
-        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
-        axis.text.x.bottom  =element_text(color= "black", size=15),
-        legend.spacing.y = unit(0, "mm"),
-        legend.spacing.x = unit(0, "mm"))
-  
-        
-p
-```
-Repeating the above graph, but not collapsing technical replicates
-```{r}
-#Plot: PercentMapping_CL_TechNotCollapsed_ActualTargets
-
 #get total counts for these targets in all samples
 targetCounts<- CL_counts[rownames(CL_counts)%in% ActualTargets,]
 SumTargetCounts<- colSums(targetCounts)
@@ -500,42 +429,19 @@ PercentMapToTargets<-as.data.frame(SumTargetCounts/colSums(CL_counts) *100)
 PercentMapToTargets$ID<- rownames(PercentMapToTargets)
 colnames(PercentMapToTargets)<-c("PercentMapToTarget", "ID")
 PercentMapToTargets$BlockerStatus<- c(rep("Unblocked", 8), rep("Blocked", 8))
-PercentMapToTargets
 
 #Rename samples 
 PercentMapToTargets$ID<- rep(c("A1", "A2", "A3", "B1", "B2", "B3", "C", "D"),2) 
 
 
 #plot
-p<- ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, fill=BlockerStatus))+
-  geom_bar(stat="identity", position="dodge")+ 
-  theme_classic()+
-  ylab("Percent of reads mapping to all target miRNAs")+
-  xlab("")+
-  ylim (0,100)+
-  scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="turquoise3"))+
-  theme(axis.text.y   = element_text(size=10, colour = "black"),
-        axis.title.y  = element_text( size=12),
-        axis.title.x  = element_text(size=14),
-        panel.border = element_rect(colour = "black", fill=NA, size=2),
-        legend.title=element_blank(),
-        legend.position = c(.1,.892),
-        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
-        legend.key.size = unit(.4, "cm"),
-        axis.text.x.bottom  =element_text(color= "black",size=15),
-        legend.spacing.y = unit(0, "mm"),
-        legend.spacing.x = unit(0, "mm"))
-  
-
-p
+p<- PlotUncollapsedExpression(PercentMapToTargets,"Percent of reads mapping to target miRNAs ( 1 mismatch allowed)")
 ```
 
 
 
-Percent mapping broken down by individual target
+#Percent mapping broken down by individual target
 ```{r}
-#Title: PercentMapping_CL_TechCollapsed_IndividualTargets
-
 #get number of reads mapping to 3 targets
 mir451_Both<- CL_CollapsedCounts[rownames(CL_CollapsedCounts) %in% c("hsa-miR-451a", "hsa-mir-451a"),]
 mir451<- as.data.frame(colSums(mir451_Both))
@@ -564,29 +470,8 @@ PercentMapToTargets$ID<- rep(c("A", "B", "C", "D"),2)
 colnames(PercentMapToTargets)<-c("PercentMapToTarget", "species", "ID")
 PercentMapToTargets$BlockerStatus<- c(rep("Unblocked", 4), rep("Blocked", 4))
 
-
-
-p<- ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, fill=BlockerStatus))+
-  geom_bar(stat="identity", position="dodge")+ 
-  theme_classic()+
-  ylab("Percent of reads mapping to target miRNA")+
-  xlab("")+
-  ylim (0,100)+
-  scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="turquoise3"))+
-  facet_wrap(~species,nrow=1)+
-  theme(axis.text.y   = element_text(size=10, color="black"),
-        axis.title.y  = element_text( size=12),
-        axis.title.x  = element_text(size=14),
-        legend.title=element_blank(),
-        legend.position = c(.1,.892),
-        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
-        axis.text.x.bottom  =element_text(size=15, color="black"),
-        legend.key.size = unit(.4, "cm"),
-        strip.text = element_text(face="bold", color="black"),
-        panel.border = element_rect(colour = "black", fill=NA, size=2), strip.background = element_blank())
-  
-
-p
+#plot
+p<- PlotIndividualExpressionLevels(PercentMapToTargets, "Percent of reads mapping to target miRNA (1 mismatch allowed)")
 ```
 
 Overall- using perfect or default settings in miRDeep2 gives a similar pattern- blockers are shown as effective in both. However, it looks like blockers are a bit more effective against PERFECT matches to its targets. You can see this in the better blocking of mature vs isomirs in basespace data
