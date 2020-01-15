@@ -635,6 +635,31 @@ blocker_sig.01_AvB<-blocker_AvB[blocker_AvB$padj<0.01,]
 #20% improvement
 ```
 
+Plot these differences in DE miRNAs for 3 different cutoffs
+```{r}
+#Get significant DE at 3 cutoffs for Blocked and unblocked
+NB_0.01Sig<-noblocker_AvB[noblocker_AvB$padj<0.01,]
+NB_0.05Sig<-noblocker_AvB[noblocker_AvB$padj<0.05,]
+NB_0.1Sig<-noblocker_AvB[noblocker_AvB$padj<0.1,]
+
+B_0.01Sig<-blocker_AvB[blocker_AvB$padj<0.01,]
+B_0.05Sig<-blocker_AvB[blocker_AvB$padj<0.05,]
+B_0.1Sig<-blocker_AvB[blocker_AvB$padj<0.1,]
+
+#looking at raw counts of these DE miRNAs
+counts_onlyblockersDE<- CL_Downsampled[rownames(CL_Downsampled) %in% rownames(OnlyBlockerDE),]
+counts_onlyblockersDE<- counts_onlyblockersDE[,c(1:6,9:14)]
+counts_onlyblockersDE<-counts_onlyblockersDE[order(counts_onlyblockersDE$A.0, decreasing=TRUE),]
+
+Sig_BvNB<- data.frame(SignificanceLevel= as.factor(c(0.01, 0.05, 0.1)), 
+                      SignificantSpecies=c(nrow(NB_0.01Sig), nrow(NB_0.05Sig), nrow(NB_0.1Sig),nrow(B_0.01Sig), nrow(B_0.05Sig), nrow(B_0.1Sig)), 
+                      BlockerStatus=c(rep("Unblocked", 3), rep("Blocked", 3)))
+
+p<- ggplot(Sig_BvNB, aes(y=SignificantSpecies, x=SignificanceLevel, fill=BlockerStatus))+
+  geom_bar(position="dodge", stat="identity")
+
+```
+
 Where do these 2 sets of DE miRNAs differ? We might expect that most should be the same and a lot of the ones that differ should have pretty low overall counts
 
 ```{r}
