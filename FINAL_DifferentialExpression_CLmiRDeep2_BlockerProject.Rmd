@@ -700,7 +700,7 @@ Sig_BvNB<- data.frame(SignificanceLevel= as.factor(c(rep(0.01, 2), rep(0.05 ,2),
                                             Median_Blocked_0.1, Median_UnBlocked_0.1),
                       BlockerStatus= c(rep(c("Blocked", "Unblocked"), 3)))
 
-#Plot this data on two separate graphs
+#Plot this data on three separate graphs
 p_NSpecies<- ggplot(Sig_BvNB, aes(y=SignificantSpecies, x=SignificanceLevel, fill=BlockerStatus))+
   geom_bar(position="dodge", stat="identity")+
   theme_classic()+
