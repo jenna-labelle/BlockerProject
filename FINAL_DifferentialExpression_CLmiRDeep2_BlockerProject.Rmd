@@ -18,6 +18,7 @@ suppressPackageStartupMessages(library(grid))
 suppressPackageStartupMessages(library(gridExtra))
 suppressPackageStartupMessages(library(metaseqR))
 suppressPackageStartupMessages(library(colorRamps))
+suppressPackageStartupMessages(library(plyr))
 ```
 
 
@@ -179,6 +180,33 @@ CPMPlot<- function(CPM, Sample){
   return(p)
   
 }
+
+#When comparing DE efficiency in blocked vs unblocked, this function used to find species unique to blocked/unblocked and find raw counts for those species. Used for plotting.
+
+GetCounts_UniqueDEmiRNA<- function(BlockedSig, UnblockedSig, SigLevel, RawCounts){
+  #Get data frame of sig miRNAs for blocked and unblocked at given significance level
+  NBSig<-UnblockedSig[UnblockedSig$padj<SigLevel,]
+  BSig<- BlockedSig[BlockedSig$padj<SigLevel,]
+  
+  #Get DE miRNA specific to blocked and unblocked
+  DEInUB<- rownames(as.data.frame(BSig)) %in% rownames(as.data.frame(NBSig))
+  DEInB<- rownames(as.data.frame(NBSig)) %in% rownames(as.data.frame(BSig))
+  OnlyBlockedDE<- BSig[!DEInUB,]
+  OnlyUnBlockedDE<- BSig[!DEInB,]
+  
+  #Get raw counts for these miRNAs
+  counts_onlyblockedDE<- RawCounts[rownames(RawCounts) %in% rownames(OnlyBlockedDE),]
+  counts_onlyblockedDE<- counts_onlyblockedDE[,c(1:6,9:14)]
+  counts_onlyblockedDE<-counts_onlyblockedDE[order(counts_onlyblockedDE$A.0, decreasing=TRUE),]
+  
+  counts_onlyunblockedDE<- RawCounts[rownames(RawCounts) %in% rownames(OnlyUnBlockedDE),]
+  counts_onlyunblockedDE<- counts_onlyunblockedDE[,c(1:6,9:14)]
+  counts_onlyunblockedDE<-counts_onlyunblockedDE[order(counts_onlyunblockedDE$A.1, decreasing=TRUE),]
+  
+  return(list(counts_onlyblockedDE, counts_onlyunblockedDE))
+  
+}
+
 ```
 
 
@@ -627,94 +655,118 @@ blocker_sig_AvB<-blocker_AvB[blocker_AvB$padj<0.05,]
 #So that's a....
 (119-89)/119
 #25% increase in the number of DE genes!!
-
-#What's the improvement if we consider padj<0.01 to be sig?
-noblocker_sig.01_AvB<-noblocker_AvB[noblocker_AvB$padj<0.01,]
-blocker_sig.01_AvB<-blocker_AvB[blocker_AvB$padj<0.01,]
-(nrow(blocker_sig.01_AvB)-nrow(noblocker_sig.01_AvB))/nrow(blocker_sig.01_AvB)
-#20% improvement
 ```
 
-Plot these differences in DE miRNAs for 3 different cutoffs
+Plot these differences in DE miRNAs for 3 different cutoffs. Three graphs:
+
+1) Number of DE species for blocked/unblocked at 3 sig cutoffs
+2) Number of DE Species UNIQUE to that group for blocked/unblocked at 3 sig cutoffs
+3) Median raw read count for these UNIQUE DE species at 3 sig cutoffs
 ```{r}
-#Get significant DE at 3 cutoffs for Blocked and unblocked
-NB_0.01Sig<-noblocker_AvB[noblocker_AvB$padj<0.01,]
-NB_0.05Sig<-noblocker_AvB[noblocker_AvB$padj<0.05,]
-NB_0.1Sig<-noblocker_AvB[noblocker_AvB$padj<0.1,]
+#padj<0.01
+Sig_Counts_Blocked_0.01<- GetCounts_UniqueDEmiRNA(blocker_AvB, noblocker_AvB, 0.01, CL_Downsampled)[[1]]
+Sig_Counts_UnBlocked_0.01<- GetCounts_UniqueDEmiRNA(blocker_AvB, noblocker_AvB, 0.01, CL_Downsampled)[[2]]
+Median_Blocked_0.01<- median(rowMeans(Sig_Counts_Blocked_0.01[,1:6,])) #14.33333
+Median_UnBlocked_0.01<-median(rowMeans(Sig_Counts_UnBlocked_0.01[,7:12,])) #651
+NSig_Blocked_0.01<-nrow(Sig_Counts_Blocked_0.01) #30
+NSig_UnBlocked_0.01<-nrow(Sig_Counts_UnBlocked_0.01) #16
 
-B_0.01Sig<-blocker_AvB[blocker_AvB$padj<0.01,]
-B_0.05Sig<-blocker_AvB[blocker_AvB$padj<0.05,]
-B_0.1Sig<-blocker_AvB[blocker_AvB$padj<0.1,]
+#padj<0.05
+Sig_Counts_Blocked_0.05<- GetCounts_UniqueDEmiRNA(blocker_AvB, noblocker_AvB, 0.05, CL_Downsampled)[[1]]
+Sig_Counts_UnBlocked_0.05<- GetCounts_UniqueDEmiRNA(blocker_AvB, noblocker_AvB, 0.05, CL_Downsampled)[[2]]
+Median_Blocked_0.05<-median(rowMeans(Sig_Counts_Blocked_0.05[,1:6,])) #12.33333
+Median_UnBlocked_0.05<-median(rowMeans(Sig_Counts_UnBlocked_0.05[,7:12,])) #249.4167
+NSig_Blocked_0.05<-nrow(Sig_Counts_Blocked_0.05) #56
+NSig_UnBlocked_0.05<-nrow(Sig_Counts_UnBlocked_0.05) #30
 
-#looking at raw counts of these DE miRNAs
-counts_onlyblockersDE<- CL_Downsampled[rownames(CL_Downsampled) %in% rownames(OnlyBlockerDE),]
-counts_onlyblockersDE<- counts_onlyblockersDE[,c(1:6,9:14)]
-counts_onlyblockersDE<-counts_onlyblockersDE[order(counts_onlyblockersDE$A.0, decreasing=TRUE),]
+#padj<0.1
+Sig_Counts_Blocked_0.1<- GetCounts_UniqueDEmiRNA(blocker_AvB, noblocker_AvB, 0.1, CL_Downsampled)[[1]]
+Sig_Counts_UnBlocked_0.1<- GetCounts_UniqueDEmiRNA(blocker_AvB, noblocker_AvB, 0.1, CL_Downsampled)[[2]]
+Median_Blocked_0.1<-median(rowMeans(Sig_Counts_Blocked_0.1[,1:6,])) #8
+Median_UnBlocked_0.1<-median(rowMeans(Sig_Counts_UnBlocked_0.1[,7:12,])) #254.6667
+NSig_Blocked_0.1<-nrow(Sig_Counts_Blocked_0.1) #77
+NSig_UnBlocked_0.1<-nrow(Sig_Counts_UnBlocked_0.1) #33
 
-Sig_BvNB<- data.frame(SignificanceLevel= as.factor(c(0.01, 0.05, 0.1)), 
-                      SignificantSpecies=c(nrow(NB_0.01Sig), nrow(NB_0.05Sig), nrow(NB_0.1Sig),nrow(B_0.01Sig), nrow(B_0.05Sig), nrow(B_0.1Sig)), 
-                      BlockerStatus=c(rep("Unblocked", 3), rep("Blocked", 3)))
+#Dataframe summarizing n sig miRNAs + median counts for sig miRNAs specific to blocked/unblocked, for the 3 different significance levels
+Sig_BvNB<- data.frame(SignificanceLevel= as.factor(c(rep(0.01, 2), rep(0.05 ,2), rep(0.1, 2))),
+                      SignificantSpecies=c(nrow(blocker_AvB[blocker_AvB$padj<0.01,]), nrow(noblocker_AvB[noblocker_AvB$padj<0.01,]),
+                                           nrow(blocker_AvB[blocker_AvB$padj<0.05,]), nrow(noblocker_AvB[noblocker_AvB$padj<0.05,]),
+                                           nrow(blocker_AvB[blocker_AvB$padj<0.1,]), nrow(noblocker_AvB[noblocker_AvB$padj<0.1,])),
+                      UniqueSignificantSpecies=c(NSig_Blocked_0.01, NSig_UnBlocked_0.01,
+                                           NSig_Blocked_0.05, NSig_UnBlocked_0.05,
+                                           NSig_Blocked_0.1, NSig_UnBlocked_0.1),
+                      MedianUniqueCounts= c(Median_Blocked_0.01, Median_UnBlocked_0.01,
+                                            Median_Blocked_0.05, Median_UnBlocked_0.05,
+                                            Median_Blocked_0.1, Median_UnBlocked_0.1),
+                      BlockerStatus= c(rep(c("Blocked", "Unblocked"), 3)))
 
-p<- ggplot(Sig_BvNB, aes(y=SignificantSpecies, x=SignificanceLevel, fill=BlockerStatus))+
-  geom_bar(position="dodge", stat="identity")
+#Plot this data on two separate graphs
+p_NSpecies<- ggplot(Sig_BvNB, aes(y=SignificantSpecies, x=SignificanceLevel, fill=BlockerStatus))+
+  geom_bar(position="dodge", stat="identity")+
+  theme_classic()+
+  xlab("Significance Level Threshold")+
+  ylab("Number of significantly DE species")+
+  scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="blue3"))+
+  ylim(0,200)+
+  theme(axis.text.y   = element_text(size=10, colour = "black"),
+        axis.title.y  = element_text(size=12, colour = "black"),
+        axis.text.x   = element_text(size=10, colour = "black"),
+        axis.title.x  = element_text(size=12, colour = "black"),
+        panel.border = element_rect(colour = "black", fill=NA, size=2),
+        legend.title=element_blank(),
+        legend.position = c(.85,.96),
+        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
+        axis.text.x.bottom  =element_text(size=15),
+        legend.key.size = unit(.4, "cm"),
+        legend.spacing.y = unit(0, "mm"))
+  
+p_UniqueNSpecies<-  ggplot(Sig_BvNB, aes(y=UniqueSignificantSpecies, x=SignificanceLevel, fill=BlockerStatus))+
+  geom_bar(position="dodge", stat="identity")+
+  theme_classic()+
+  xlab("Significance Level Threshold")+
+  ylab("Number of significantly DE species (for species unique to specific sample group)")+
+  scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="blue3"))+
+  ylim(0,200)+
+  theme(axis.text.y   = element_text(size=10, colour = "black"),
+        axis.title.y  = element_text(size=12, colour = "black"),
+        axis.text.x   = element_text(size=10, colour = "black"),
+        axis.title.x  = element_text(size=12, colour = "black"),
+        panel.border = element_rect(colour = "black", fill=NA, size=2),
+        legend.title=element_blank(),
+        legend.position = c(.85,.96),
+        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
+        axis.text.x.bottom  =element_text(size=15),
+        legend.key.size = unit(.4, "cm"),
+        legend.spacing.y = unit(0, "mm")) 
+
+p_MedianCounts<- ggplot(Sig_BvNB, aes(y=MedianUniqueCounts, x=SignificanceLevel, fill=BlockerStatus))+
+  geom_bar(position="dodge", stat="identity")+
+  theme_classic()+
+  xlab("Significance Level Threshold")+
+  ylab("Median raw counts (for species unique to specific sample group)")+
+  scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="blue3"))+
+  theme(axis.text.y   = element_text(size=10, colour = "black"),
+        axis.title.y  = element_text(size=12, colour = "black"),
+        axis.text.x   = element_text(size=10, colour = "black"),
+        axis.title.x  = element_text(size=12, colour = "black"),
+        panel.border = element_rect(colour = "black", fill=NA, size=2),
+        legend.title=element_blank(),
+        legend.position = c(.85,.96),
+        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
+        axis.text.x.bottom  =element_text(size=15),
+        legend.key.size = unit(.4, "cm"),
+        legend.spacing.y = unit(0, "mm"))
+  
+
+grid.arrange(p_NSpecies+ggtitle(""),p_UniqueNSpecies, p_MedianCounts+ggtitle(""), nrow=1)
+
+ggarrange(p_NSpecies, p_UniqueNSpecies, p_MedianCounts, nrow=1)
 
 ```
 
-Where do these 2 sets of DE miRNAs differ? We might expect that most should be the same and a lot of the ones that differ should have pretty low overall counts
 
-```{r}
-DEInBoth<- rownames(as.data.frame(blocker_sig_AvB)) %in% rownames(as.data.frame(noblocker_sig_AvB))
-sum(DEInBoth)
-#63 of the 89 unblocked DE species are also in the blocked DE species (70%)
-#So of the 119 blocked DE species, 56 are unique to blocked
-#And of the 89 unblocked DE species, 26 are unique to unblocked
-
-#get 56 DE species unique to blocked
-OnlyBlockerDE<- blocker_sig_AvB[!DEInBoth,]
-
-#looking at raw counts of these DE miRNAs
-counts_onlyblockersDE<- CL_Downsampled[rownames(CL_Downsampled) %in% rownames(OnlyBlockerDE),]
-counts_onlyblockersDE<- counts_onlyblockersDE[,c(1:6,9:14)]
-counts_onlyblockersDE<-counts_onlyblockersDE[order(counts_onlyblockersDE$A.0, decreasing=TRUE),]
-```
-
-```{r}
-#Median read count for ALL blocker DE species:
-mean(rowMedians(as.matrix(CL_Downsampled[rownames(blocker_sig_AvB),])))
-#18,748
-
-mean(rowMedians(as.matrix(counts_onlyblockersDE)))
-#21,147
-
-#Excluding hsa-miR-92a (target, likely only DE due to differing efficiency in A vs B samples):
-mean(rowMedians(as.matrix(counts_onlyblockersDE)[-1,]))
-#1,317
-
-```
-
-So overall: if you exclude miR-92a, the blocker-specific DE miRNAs have a much lower raw read count than the entire set of DE miRNAs. This suggests that these miRNAs are DE due to the increased ability to detect very lowly expressed miRNAs. 
-
-Looking at unblocked-specific DE miRNAs:
-```{r}
-#get DE species unique to blocked
-DEInBoth<- rownames(noblocker_sig_AvB) %in% rownames(blocker_sig_AvB)
-OnlyNoBlockerDE<- noblocker_sig_AvB[!DEInBoth,]
-
-#looking at raw counts of these DE miRNAs
-counts_onlynoblockersDE<- CL_Downsampled[rownames(CL_Downsampled) %in% rownames(OnlyNoBlockerDE),]
-counts_onlynoblockersDE<- counts_onlynoblockersDE[,c(1:6,9:14)]
-counts_onlynoblockersDE<-counts_onlynoblockersDE[order(counts_onlynoblockersDE$A.0, decreasing=TRUE),]
-
-#Median read count for ALL noblocker DE species:
-mean(rowMedians(as.matrix(CL_Downsampled[rownames(noblocker_sig_AvB),])))
-#9730
-
-mean(rowMedians(as.matrix(counts_onlynoblockersDE)))
-#2966
-
-#No targets in these 8 no blocker specific miRNAs
-```
 Overall, much higher total read counts for no blocker-specific sig DE miRNAs. Supports the idea that without blocker, can't get really good discrimination of lowly expressed miRNAs!
+
 
 #Potential Off target effects: looking more closely
 
