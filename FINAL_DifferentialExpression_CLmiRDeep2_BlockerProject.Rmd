@@ -122,14 +122,14 @@ PlotHeatmap<- function(OrderedResults, rld, metadata, nspecies, MinSubtract, Max
   topgenes<- rownames(OrderedResults[1:nspecies,])
   mat<- assay(rld)[topgenes,]
   mat<- mat - rowMeans(mat)
-  colnames(mat)<-paste(metadata$Sample," (",metadata$sampleGroup, ")",sep="")
+  colnames(mat)<-paste(metadata$Sample," (",metadata$Group, ")",sep="")
   
   #Heatmap settings
   mat_breaks<- seq(min(mat-MinSubtract), max(mat-MaxSubtract), length.out=75)
 
   #Create metadata- to be used to color code to show which group the sample belongs to
-  metadata<- data.frame(Group=metadata$sampleGroup, 
-                        row.names=paste(metadata$Sample," (",metadata$sampleGroup, ")",sep=""),
+  metadata<- data.frame(Group=metadata$Group, 
+                        row.names=paste(metadata$Sample," (",metadata$Group, ")",sep=""),
                         Sample=metadata$Sample)
 
   #plot heatmap
@@ -340,7 +340,8 @@ Visualize DE results with heatmap:
 #normalize results
 rld<- rlog(dds)
 
-p<-PlotHeatmap(resOrdered,rld, metadata,100, -.2,1,12)
+#plot
+p<-PlotHeatmap(resOrdered,rld, metadata,nrow(resOrdered), -.2,1,12)
 ```
 
 Blocked/unblocked samples cluster together, as expected. Samples A/B and C/D also cluster together, as seen in the PCA results
@@ -416,18 +417,22 @@ write.csv(resOrdered, paste(wd, "DESeq2Results/DESeq2Results_ActualTargetsRemove
 
 
 
-#Variation B (actual targets + species in same family removed) 
+#Variation B (actual targets + species in same family removed)
+Only removed if they were at padj<0.05 in the previous analysis (actual targets removed)
 
 Select all species with 92, 451, or 486 in name. Also select 2 hsa-mir-25 species (same family as 92a)
 ```{r}
+#Entire list of all species in target family
 Target_92<- rownames(CL_AT[grep("miR-92", rownames(CL_AT))[5:8],])
 Target_451<- rownames(CL_AT[grep("miR-451", rownames(CL_AT))[11],])
 Target_486<- rownames(CL_AT[grep("miR-486", rownames(CL_AT)),])
 Target_25<- rownames(CL_AT[grep("miR-25", rownames(CL_AT)),])
 TargetFamilies<- c(Target_451,Target_486,Target_92, Target_25)
 
-#Remove the 8 additional species that are in the same family as the 3 actual targets
-CL_NoTF<- CL_AT[!(rownames(CL_AT)%in%TargetFamilies),]
+TargetFamilies[TargetFamilies %in% rownames(resOrdered[resOrdered$padj<0.05,])]
+
+#Remove the 3 additional species that are in the same family as the 3 actual targets + padj<0.05
+CL_NoTF<- CL_AT[!(rownames(CL_AT)%in%TargetFamilies[TargetFamilies %in% rownames(resOrdered[resOrdered$padj<0.05,])]),]
 ```
 
 
@@ -440,7 +445,7 @@ dds<- RunDESeq2(CL_NoTF,meta,TRUE)
 
 #Plot PCA
 plotPCA(varianceStabilizingTransformation(dds), intgroup="sampleGroup")
-p<- MyPCA(dds, metadata,46,19,colors, -15,17, -20,25)
+p<- MyPCA(dds, metadata,46,18,colors, -15,17, -20,25)
 
 #Plot PCA without collapsing technical replicates
 p<- MyPCA_TechNotCollapsed(CL_NoTF, meta, 46, 19, -18, 20, -25, 30)
@@ -462,7 +467,7 @@ rld<- rlog(dds)
 
 Plot heatmap
 ```{r}
-p<-PlotHeatmap(resOrdered, rld, metadata, 20, -.2,1.2,14)
+p<-PlotHeatmap(resOrdered, rld, metadata, 0, -.2,1.2,14)
 
 ```
 
@@ -689,9 +694,12 @@ NSig_UnBlocked_0.1<-nrow(Sig_Counts_UnBlocked_0.1) #33
 
 #Dataframe summarizing n sig miRNAs + median counts for sig miRNAs specific to blocked/unblocked, for the 3 different significance levels
 Sig_BvNB<- data.frame(SignificanceLevel= as.factor(c(rep(0.01, 2), rep(0.05 ,2), rep(0.1, 2))),
-                      SignificantSpecies=c(nrow(blocker_AvB[blocker_AvB$padj<0.01,]), nrow(noblocker_AvB[noblocker_AvB$padj<0.01,]),
-                                           nrow(blocker_AvB[blocker_AvB$padj<0.05,]), nrow(noblocker_AvB[noblocker_AvB$padj<0.05,]),
-                                           nrow(blocker_AvB[blocker_AvB$padj<0.1,]), nrow(noblocker_AvB[noblocker_AvB$padj<0.1,])),
+                      SignificantSpecies=c(nrow(blocker_AvB[blocker_AvB$padj<0.01,]), 
+                                           nrow(noblocker_AvB[noblocker_AvB$padj<0.01,]),
+                                           nrow(blocker_AvB[blocker_AvB$padj<0.05,]),
+                                           nrow(noblocker_AvB[noblocker_AvB$padj<0.05,]),
+                                           nrow(blocker_AvB[blocker_AvB$padj<0.1,]),
+                                           nrow(noblocker_AvB[noblocker_AvB$padj<0.1,])),
                       UniqueSignificantSpecies=c(NSig_Blocked_0.01, NSig_UnBlocked_0.01,
                                            NSig_Blocked_0.05, NSig_UnBlocked_0.05,
                                            NSig_Blocked_0.1, NSig_UnBlocked_0.1),
