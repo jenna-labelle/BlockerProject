@@ -90,27 +90,6 @@ PlotUncollapsedExpression<- function(PercentMapToTargets, ylab){
   return(p)
 }
 
-
-
-ggplot(PercentMapToTargets, aes(y=PercentMapToTarget, x=ID, fill=BlockerStatus))+
-  geom_bar(stat="identity", position="dodge")+ 
-  theme_classic()+
-  ylab("Percent of reads mapping to all target miRNAs")+
-  xlab("")+
-  ylim (0,100)+
-  scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="blue3"))+
-  theme(axis.text.y   = element_text(size=10, colour = "black"),
-        axis.title.y  = element_text( size=12),
-        axis.title.x  = element_text(size=14),
-        panel.border = element_rect(colour = "black", fill=NA, size=2),
-        legend.title=element_blank(),
-        legend.position = c(.1,.892),
-        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
-        legend.key.size = unit(.4, "cm"),
-        axis.text.x.bottom  =element_text(color= "black",size=15),
-        legend.spacing.y = unit(0, "mm"),
-        legend.spacing.x = unit(0, "mm"))
-
 ```
 
 #BaseSpace Data
@@ -142,10 +121,10 @@ colnames(BS_CollapsedCounts)<- c("A.0", "B.0", "C.0", "D.0", "A.1", "B.1", "C.1"
 Next, get number of reads mapping to any of the targets and divide by the total number of reads
 ```{r}
 #Get list of all targets (and very closely related miRNAs)
-Target_92<- rownames(BaseSpaceDownSampled_Counts[grep("miR-92", rownames(BaseSpaceDownSampled_Counts))[1:4],])
-Target_451<- rownames(BaseSpaceDownSampled_Counts[grep("miR-451", rownames(BaseSpaceDownSampled_Counts))[1],])
-Target_486<- rownames(BaseSpaceDownSampled_Counts[grep("miR-486", rownames(BaseSpaceDownSampled_Counts)),])
-Target_25<- rownames(BaseSpaceDownSampled_Counts[grep("miR-25", rownames(BaseSpaceDownSampled_Counts)),])
+Target_92<- rownames(BaseSpaceDownSampled_Counts[grep("miR-92", rownames(BaseSpaceDownSampled_Counts), ignore.case=TRUE),])[1:8]
+Target_451<- rownames(BaseSpaceDownSampled_Counts[grep("miR-451", rownames(BaseSpaceDownSampled_Counts), ignore.case=TRUE),])[c(1,4,9,10)]
+Target_486<- rownames(BaseSpaceDownSampled_Counts[grep("miR-486", rownames(BaseSpaceDownSampled_Counts), ignore.case=TRUE),])
+Target_25<- rownames(BaseSpaceDownSampled_Counts[grep("miR-25", rownames(BaseSpaceDownSampled_Counts), ignore.case=TRUE),])
 TargetFamilies<- c(Target_451,Target_486,Target_92, Target_25)
 
 #get total counts for these targets in all samples
