@@ -7,6 +7,7 @@ Import libraries
 ```{r}
 suppressPackageStartupMessages(library(metaseqR))
 suppressPackageStartupMessages(library(ggplot2))
+
 ```
 
 Functions:
