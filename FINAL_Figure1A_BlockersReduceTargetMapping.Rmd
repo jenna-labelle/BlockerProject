@@ -7,6 +7,7 @@ Import libraries
 ```{r}
 suppressPackageStartupMessages(library(metaseqR))
 suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(reshape2))
 
 ```
 
@@ -63,7 +64,7 @@ counts<- downsample.counts(countsInput, set.seed(42)) #9,989,167 lowest B.570.0
 ```
 
 
-#2. Get proportion mapping to any target --> mean % across unblocked/blocked --> plot
+#2. Figure 1A: Get proportion mapping to any target --> mean % across unblocked/blocked --> plot
 ```{r}
 #Get raw, downsampled counts for all 3 targets for al 16 samples
 MapAnyTarget<- counts[rownames(counts) %in% c("hsa-miR-92a-3p", "hsa-miR-451a", "hsa-miR-486-5p"),]
@@ -86,12 +87,11 @@ p<-ggplot(Per_AnyTarget_TwoGroups, aes(y=MeanPercentMapping, x=reorder(Status, -
   ylab("Percent of reads mapping to targets species")+
   xlab("")+
   scale_fill_manual("", values=c("Blocked"="firebrick3", "Unblocked"="turquoise3"))+
-  geom_errorbar(aes(ymin=MeanPercentMapping-sd, ymax=MeanPercentMapping+sd), width=.1, position=position_dodge(.9),color="black")+
+  geom_errorbar(aes(ymin=MeanPercentMapping-sd, ymax=MeanPercentMapping+sd), width=.1, size=1, position=position_dodge(.9),color="black")+
   ylim(0,100)+
-  theme(axis.text.y   = element_text(size=12, color="black"),
-          axis.text.x   = element_text(size=10, color="black"),
-          axis.title.y  = element_text(size=16, color="black"),
-          axis.title.x  = element_text(size=13),
+  theme(axis.text.y   = element_text(size=12, color="black", face= "bold"),
+          axis.text.x   = element_text(size=14, color="black", face="bold"),
+          axis.title.y  = element_text(size=14, color="black", "bold"),
           panel.border = element_rect(colour = "black", fill=NA, size=2),
           legend.title=element_blank(),
           legend.position = "none",
@@ -100,13 +100,13 @@ p<-ggplot(Per_AnyTarget_TwoGroups, aes(y=MeanPercentMapping, x=reorder(Status, -
  
 ```
 
-#3. Graph % for any target for all 12 samples (A and B, all replicates), grouping by patient then by blocked/unblocked then by ordering input levels (input labels added manually)
+#3. Figure 1B: Graph % for any target for all 12 samples (A and B, all replicates), grouping by patient then by blocked/unblocked then by ordering input levels (input labels added manually)
 ```{r}
 JustReplicated<-PercentMapToAnyTarget[c(1:6, 9:14)]
 Per_AnyTarget_16Samples<- data.frame(Status=c(rep("Unblocked",6),rep( "Blocked",6)), 
                                      PM=unname(JustReplicated),
                                      Input=gsub(".*:", "", gsub("-.*", "", names(JustReplicated))),
-                                     Patient=substr(names(JustReplicated), 1,1),
+                                     Patient=paste("Sample", substr(names(JustReplicated), 1,1)),
                                      Order = c(1,2,3,7,8,9,4,5,6,10,11,12),
                                      Sample=gsub("-.*", "", names(JustReplicated)))
 
@@ -119,18 +119,19 @@ p<-ggplot(Per_AnyTarget_16Samples, aes(y=PM, x=reorder(Status,+Order),group= Inp
   xlab("")+
   scale_fill_manual("", values=c("Blocked"="firebrick3", "Unblocked"="turquoise3"))+
   ylim(0,100)+
-  theme(axis.text.y   = element_text(size=12, color="black"),
+  theme(axis.text.y   = element_text(size=12, color="black", face="bold"),
         axis.text.x   = element_blank(),
-        axis.title.y  = element_text(size=16, color="black"),
-        panel.border = element_rect(colour = "black", fill=NA, size=2),
-        strip.background = element_rect(color = "black", size = 2),
+        axis.title.y  = element_text(size=14, color="black", face="bold"),
+        panel.border = element_rect(colour = "black", fill=NA, size=2), 
+                               strip.background = element_blank(),
         legend.title=element_blank(),
         legend.text=element_text(size=12, face="bold"),
-        legend.position=c(.9,.9),
+        legend.position=c(.85,.9),
         legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
         strip.text.x = element_text(
         size = 15, color = "black", face = "bold"
         ))
+
 
 ```
 
@@ -155,7 +156,7 @@ B_B<- My_ANOVA(PercentMapTo3Targets[,12:14])
 ```
 
 
-#5. Graph % for mapping to 3 targets individually for 4 unblocked vs 4 blocked
+#5. Figure 1C: Graph % for mapping to 3 targets individually for 4 unblocked vs 4 blocked
 
 
 ```{r}
@@ -188,39 +189,43 @@ PM_melt<- PM_melt[order(PM_melt$ID, PM_melt$species),]
 PM_melt$Order<- 1:24
 
 
-#plot
-p<-ggplot(PM_melt, aes(y=value, x=ID, color=Status, fill=Status))+
-  geom_bar(stat="identity", position="dodge")+ 
-  theme_classic()+
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
-  facet_wrap(~species,nrow=1)+
-  ylab("Percent of reads mapping to target species")+
-  xlab("")+
-  scale_fill_manual("", values=c("A:UnBlocked"="turquoise3","Blocked"="firebrick3"))+
-  ylim(0,100)
+#plot: Figure1C_PercentReduced_AllTargetsSeparately
+p<-ggplot(PM_melt, aes(y=value, x=ID, fill=Status))+
+        geom_bar(stat="identity", position="dodge")+ 
+        theme_classic()+
+        theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+        facet_wrap(~species,nrow=1)+
+        ylab("Percent of reads mapping to target species")+
+        xlab("")+
+        scale_fill_manual("", values=c("A:UnBlocked"="turquoise3","Blocked"="firebrick3"),labels=c("Unblocked", "Blocked"))+
+        ylim(0,100)+
+        theme(axis.text.y   = element_text(size=12, colour = "black", face="bold"),
+                axis.title.y  = element_text(size=14, face="bold", color="black"),
+                axis.text.x  = element_text(size=14, face="bold"),
+                panel.border = element_rect(colour = "black", fill=NA, size=2), 
+                               strip.background = element_blank(),
+                legend.title=element_blank(),
+                legend.position = c(.12,.92),
+                legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
+                axis.text.x.bottom  =element_text(color="black", size=15),
+                legend.key.size = unit(.4, "cm"),
+                legend.spacing.y = unit(0, "mm"),
+                legend.text=element_text(size=12, face="bold", color= "black"),
+                strip.text = element_text(size= 15,face="bold")
+              )
 
 
+#calculate reduction in percent mapping for each species
+MapReduction<- c_PercentMapTo3Targets
+MapReduction$AReduce<- (MapReduction$`A-Unblocked` - MapReduction$`A-Blocked`)/MapReduction$`A-Unblocked` *100
+MapReduction$BReduce<- (MapReduction$`B-Unblocked` - MapReduction$`B-Blocked`)/MapReduction$`B-Unblocked` *100
+MapReduction$CReduce<- (MapReduction$`C-Unblocked` - MapReduction$`C-Blocked`)/MapReduction$`C-Unblocked` *100
+MapReduction$DReduce<- (MapReduction$`D-Unblocked` - MapReduction$`D-Blocked`)/MapReduction$`D-Unblocked` *100
 
-p<-ggplot(Per_AnyTarget_16Samples, aes(y=PM, x=reorder(Status,+Order),group= Input,fill=Status))+
-  geom_bar(stat="identity", position=position_dodge(width=0.8), width=.7)+ 
-  theme_classic()+
-  facet_wrap(~Patient, nrow=1)+
-  ylab("Percent of reads mapping to target species")+
-  xlab("")+
-  scale_fill_manual("", values=c("Blocked"="firebrick3", "Unblocked"="turquoise3"))+
-  ylim(0,100)+
-  theme(axis.text.y   = element_text(size=12, color="black"),
-        axis.text.x   = element_blank(),
-        axis.title.y  = element_text(size=16, color="black"),
-        panel.border = element_rect(colour = "black", fill=NA, size=2),
-        strip.background = element_rect(color = "black", size = 2),
-        legend.title=element_blank(),
-        legend.text=element_text(size=12, face="bold"),
-        legend.position=c(.9,.9),
-        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
-        strip.text.x = element_text(
-        size = 15, color = "black", face = "bold"
-        ))
+rowMeans(MapReduction[,9:12])
+#451a reduced by 42%
+#486-5p reduced by 80%
+#92a reduced by 74%
 
 ```
 
