@@ -1,0 +1,585 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+Libraries:
+```{r}
+suppressPackageStartupMessages(library(DESeq2))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(reshape2))
+suppressPackageStartupMessages(library(metaseqR))
+suppressPackageStartupMessages(library(plyr))
+suppressPackageStartupMessages(library(dplyr))
+windowsFonts("Arial" = windowsFont("Arial"))
+```
+
+#Figure 5: improvements with blockers
+A: number of species that pass threshold
+B-C: improvements in DE
+
+Functions used
+```{r}
+#Function that takes a column of counts and returns the number of species that pass the given list of threhsolds
+CountsPassingThreshold<- function(counts, threshold){
+  Passthreshold<-c()
+  for (i in 1:length(threshold)){
+    Passthreshold[i]<- sum(counts>threshold[i])
+    
+  }
+  return(Passthreshold)
+}
+
+#When comparing DE efficiency in blocked vs unblocked, this function used to find species unique to blocked/unblocked and find raw counts for those species. Used for plotting.
+
+GetCounts_UniqueDEmiRNA<- function(BlockedSig, UnblockedSig, SigLevel, RawCounts){
+  #Get data frame of sig miRNAs for blocked and unblocked at given significance level
+  NBSig<-UnblockedSig[UnblockedSig$padj<SigLevel,]
+  BSig<- BlockedSig[BlockedSig$padj<SigLevel,]
+  
+  #Get DE miRNA specific to blocked and unblocked
+  DEInUB<- rownames(as.data.frame(BSig)) %in% rownames(as.data.frame(NBSig))
+  DEInB<- rownames(as.data.frame(NBSig)) %in% rownames(as.data.frame(BSig))
+  OnlyBlockedDE<- BSig[!DEInUB,]
+  OnlyUnBlockedDE<- BSig[!DEInB,]
+  
+  #Get raw counts for these miRNAs
+  counts_onlyblockedDE<- RawCounts[rownames(RawCounts) %in% rownames(OnlyBlockedDE),]
+  counts_onlyblockedDE<- counts_onlyblockedDE[,c(1:6,9:14)]
+  counts_onlyblockedDE<-counts_onlyblockedDE[order(counts_onlyblockedDE$A.0, decreasing=TRUE),]
+  
+  counts_onlyunblockedDE<- RawCounts[rownames(RawCounts) %in% rownames(OnlyUnBlockedDE),]
+  counts_onlyunblockedDE<- counts_onlyunblockedDE[,c(1:6,9:14)]
+  counts_onlyunblockedDE<-counts_onlyunblockedDE[order(counts_onlyunblockedDE$A.1, decreasing=TRUE),]
+  
+  return(list(counts_onlyblockedDE, counts_onlyunblockedDE))
+  
+}
+
+GetSigSpecies<- function(SigLevel, res){
+        return(res[res$padj < SigLevel,])
+}
+```
+
+#Read in data and downsample
+
+```{r}
+#readwd<-"Z:/Channing_miRNA_Blocker_Test/BlockerProject/BlockerProject/RawData/"
+#countsInput<- read.csv(paste(readwd, "miRNA_CLmiRDeep2Results_AllSamples_DefaultmiRDeep2Settings.csv", sep=""))
+countsInput<- read.csv("C:/Users/Jenna/Documents/BlockerProject/miRNA_CLmiRDeep2Results_AllSamples_DefaultmiRDeep2Settings.csv")
+rownames(countsInput)<-countsInput$X
+countsInput<- countsInput[,-1]
+countsInput<- countsInput[,c(1,3,5,7,9,11,13,15,2,4,6,8,10,12,14,16)]
+colnames(countsInput)<- c(paste(c("A:low", "A:medium", "A:high", "B:low", "B:medium", "B:high", "C", "D"), "-Unblocked",sep=""),
+                          paste( c("A:low", "A:medium", "A:high","B:low", "B:medium", "B:high", "C", "D"), "-Blocked",sep="" ))
+
+#Downsample to common depth
+counts<- downsample.counts(countsInput, set.seed(42)) #9,989,167 lowest B.570.0
+
+#Convert values to integer
+counts<-as.data.frame(apply(counts, 2, as.integer))
+rownames(counts)<- rownames(countsInput)
+```
+
+
+
+
+#Figure 5A:
+
+Get number of species that pass certain thresholds, plot
+```{r}
+#Collapse technical replicates (by just taking mean of counts)
+unblockedCounts<- as.data.frame(counts[,1:8])
+unblockedCounts$ACollapsed<- rowMeans(unblockedCounts[,1:3])
+unblockedCounts$BCollapsed<- rowMeans(unblockedCounts[,4:6])
+unblockedCounts<-unblockedCounts[,c(9,10,7,8)]
+
+#get mean counts across all 4 samples
+unblockedCountsMeans<- as.data.frame((rowMeans(unblockedCounts)))
+
+#number that pass thresholds:
+unblockedPassThresholds<- data.frame(threshold=c(1,5,10,50,100,500), countsPassingThreshold=c(sum(unblockedCountsMeans>1),sum(unblockedCountsMeans>5),sum(unblockedCountsMeans>10),sum(unblockedCountsMeans>50),sum(unblockedCountsMeans>100),sum(unblockedCountsMeans>500)))
+
+#blocked: collapse technical replicates (by just taking mean of counts)
+blockedCounts<- as.data.frame(counts[,9:16])
+blockedCounts$ACollapsed<- rowMeans(blockedCounts[,1:3])
+blockedCounts$BCollapsed<- rowMeans(blockedCounts[,4:6])
+blockedCounts<-blockedCounts[,c(9,10,7,8)]
+
+#get mean counts across all 4 samples
+blockedCountsMeans<- as.data.frame((rowMeans(blockedCounts)))
+
+#number that pass thresholds:
+blockedPassThresholds<- data.frame(threshold=c(1,5,10,50,100,500), countsPassingThreshold=c(sum(blockedCountsMeans>1),sum(blockedCountsMeans>5),sum(blockedCountsMeans>10),sum(blockedCountsMeans>50),sum(blockedCountsMeans>100),sum(blockedCountsMeans>500)))
+
+#combine into one, adding in an extra column for blocker status
+unblockedPassThresholds$status<- rep("unblocked",6)
+blockedPassThresholds$status<- rep("blocked",6)
+passThreshold<-rbind(unblockedPassThresholds,blockedPassThresholds)
+
+#plot
+p<- ggplot(passThreshold, aes(x=threshold, y=countsPassingThreshold, color=status))+
+             geom_line(size=2)+
+  geom_point(size=4)+
+  scale_color_manual(values=c("black", "red"))+
+  ggtitle("Number of miRNAs passing a count threshold")+
+  theme_classic()
+p
+```
+
+#doing the above, but not taking the mean. still collapse technical, but keep a/b/c/d info. Add in a 4th column in the final table with sample type. Then subtract the #passing threshold for a/b/c/d individually from blocker vs no blocker, then graph. 
+
+
+```{r}
+#Set desired thresholds
+thresholds<-c(1,3,5,10,25,50,75,100,250,500,600,700)
+NumberInEachGroup<- length(thresholds)*5 #used for plotting later
+
+#Get counts passing threshold for unblocked samples, then transform data- 4 columns: ID (A/b/c/d), threshold, #of species that passed that threshold, and blocker status
+unblockedPassThreshold<- as.data.frame(apply(unblockedCounts, 2, 
+                                             CountsPassingThreshold, thresholds))
+rownames(unblockedPassThreshold)<- thresholds
+colnames(unblockedPassThreshold)<- c("A", "B", "C", "D")
+#add 4th column: mean of all samples
+unblockedPassThreshold$Mean<- rowMeans(unblockedPassThreshold)
+unblockedPassThreshold<- as.data.frame(t(unblockedPassThreshold))
+unblockedPassThreshold$ID<- rownames(unblockedPassThreshold)
+#reformat- melt
+unblockedPassThreshold<- melt(unblockedPassThreshold)
+colnames(unblockedPassThreshold)<- c("ID", "threshold","speciesPassingThreshold")
+unblockedPassThreshold$status<- rep("unblocked", NumberInEachGroup)
+unblockedPassThreshold$threshold<- as.integer(as.character((unblockedPassThreshold$threshold)))
+
+#Get counts passing threshold for blocked samples, then transform data- 4 columns: ID (A/b/c/d), threshold, #of species that passed that threshold, and blocker status
+blockedPassThreshold<- as.data.frame(apply(blockedCounts, 2, 
+                                             CountsPassingThreshold, thresholds))
+rownames(blockedPassThreshold)<- thresholds
+colnames(blockedPassThreshold)<- c("A", "B", "C", "D")
+#add 4th column: mean of all samples
+blockedPassThreshold$Mean<- rowMeans(blockedPassThreshold)
+blockedPassThreshold<- as.data.frame(t(blockedPassThreshold))
+blockedPassThreshold$ID<- rownames(blockedPassThreshold)
+#reformat- melt
+blockedPassThreshold<- melt(blockedPassThreshold)
+colnames(blockedPassThreshold)<- c("ID", "threshold","speciesPassingThreshold")
+blockedPassThreshold$status<- rep("blocked", NumberInEachGroup)
+blockedPassThreshold$threshold<- as.integer(as.character((blockedPassThreshold$threshold)))
+
+#combine into one
+passThreshold<-rbind(unblockedPassThreshold,blockedPassThreshold)
+
+#reformat so that you have 4 columns: ID, threshold, #species passing in noblocker, #species passing in blocker
+PT<-data.frame(passThreshold$ID[1:NumberInEachGroup],
+               passThreshold$threshold[1:NumberInEachGroup],
+               passThreshold$speciesPassingThreshold[1:NumberInEachGroup],
+               passThreshold$speciesPassingThreshold[(NumberInEachGroup+1):nrow(passThreshold)])
+colnames(PT)<- c("ID", "threshold", "SpeciesPT_noblocker", "SpeciesPT_blocker")
+
+#now need to subtract each- i.e., sample A at threshold 1 with no blocker vs with blocker. get those values for all, then plot. 
+df<- as_tibble(PT)
+df<-df%>% group_by(ID) %>% mutate(BlockerMinusNoBlocker=SpeciesPT_blocker-SpeciesPT_noblocker)
+df<- as.data.frame(df)
+df$Mean<- rep(c(rep("Sample",4),"Mean"),length(thresholds))
+df$Mean<- as.factor(df$Mean)
+
+Samplecolors<- c("goldenrod1","violetred3", "skyblue3", "darkolivegreen4")
+
+#plot
+p<- ggplot(df, aes(x=threshold, y=BlockerMinusNoBlocker, color=ID))+
+  geom_line(aes(linetype = Mean, group=ID, size=Mean))+
+  scale_linetype_manual(values= c("solid", "dashed"),guide=FALSE)+
+  scale_size_manual(values=c("Sample"=1.2,"Mean"=2), guide=FALSE)+
+  #geom_point(size=1.3)+
+  xlab("Count threshold")+
+  ylab("miRNA species passing threshold (blocked minus unblocked)")+
+  scale_y_continuous(breaks=seq(-50, 400, 50), limits=c(0,350))+
+  scale_x_continuous(breaks=seq(0, max(df$threshold), 100))+
+  scale_color_manual(values=c("goldenrod1","violetred3", "skyblue3", "darkolivegreen4", "black"))+
+  theme_classic()+
+  guides(color = guide_legend(override.aes = list(size = 2)))+
+  theme(axis.text.y   = element_text(size=12, colour = "black", face= "bold"),
+        axis.title.y  = element_text(size=16, colour = "black", face= "bold"),
+        axis.text.x   = element_text(size=12, colour = "black", face= "bold"),
+        axis.title.x  = element_text(size=16, colour = "black", face= "bold"),
+        panel.border = element_rect(colour = "black", fill=NA, size=2),
+        legend.title=element_blank(),
+        legend.position = c(.9,.85),
+        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
+        legend.key.size = unit(.4, "cm"),
+        legend.spacing.y = unit(0, "mm"),
+        legend.text=element_text(size=14, face="bold"))
+p
+
+#Exported as Figure5A_SpeciesPassingThreshold_032520
+
+```
+
+
+
+#Figure 5B- Differential expression
+General idea: compare the number of significantly DE species between A and B in both blocked and unblocked samples.
+
+Two analyses:
+
+1) The 3 A.0 samples vs the 3 B.0 samples
+2) The 3 A.1 samples vs the 3 B.1 samples
+
+
+Analysis #1: DESeq2 using A0 vs B0 - here, technical replicates are NOT collapsed
+```{r}
+#rename rows, removing input info
+A0_B0<- counts[,c(1:6)]
+colnames(A0_B0)<- c("A.0.1", "A.0.2", "A.0.3", "B.0.1", "B.0.2", "B.0.3")
+
+
+#create metadata
+sampleGroup<- c(rep("A", 3), rep("B", 3))
+sample<- colnames(A0_B0)
+meta<- data.frame(sample, sampleGroup)
+
+#create DESeq2 object
+dds<- DESeqDataSetFromMatrix(countData=A0_B0, 
+                             colData=meta, 
+                             design=~sampleGroup)
+
+#Run DESeq2
+dds<- DESeq(dds)
+
+#Extrac results
+res<- na.omit(results(dds))
+resOrdered<- res[order(res$padj),]
+nrow(resOrdered[resOrdered$padj<0.05,]) #89
+nrow(resOrdered[resOrdered$padj<0.01,]) #60
+
+#Save for later
+noblocker_AvB<- resOrdered
+```
+
+DESeq2 using A1 vs B1- here, technical replicates are NOT collapsed
+```{r}
+#rename rows, removing input info
+A1_B1<- counts[,c(9:14)]
+colnames(A1_B1)<- c("A.1.1", "A.1.2", "A.1.3", "B.1.1", "B.1.2", "B.1.3")
+
+#create metadata
+sampleGroup<- c(rep("A", 3), rep("B", 3))
+sample<- colnames(A1_B1)
+meta<- data.frame(sample, sampleGroup)
+
+#create DESeq2 object
+dds<- DESeqDataSetFromMatrix(countData=A1_B1, 
+                             colData=meta, 
+                             design=~sampleGroup)
+
+#Run DESeq2
+dds<- DESeq(dds)
+
+#Extract results
+res<- na.omit(results(dds))
+resOrdered<- res[order(res$padj),]
+nrow(resOrdered[resOrdered$padj<0.05,]) #119
+nrow(resOrdered[resOrdered$padj<0.01,]) #75
+
+#Save for later
+blocker_AvB<- resOrdered
+```
+
+
+```{r}
+#So that's a....
+(119-89)/119
+#25% increase in the number of DE genes!!
+```
+
+#Figure 5B
+```{r}
+#Get list of sig miRs at given sig levels 
+SigLevels<- c(0.1, 0.05, 0.01)
+blocked_Sig<-lapply(SigLevels, GetSigSpecies, res=blocker_AvB)
+unblocked_Sig<-lapply(SigLevels, GetSigSpecies, res=noblocker_AvB)
+
+#Get number of sig miRs at given sig levels
+blocked_NSig<- unlist(lapply(blocked_Sig, nrow))
+unblocked_NSig<- unlist(lapply(unblocked_Sig, nrow))
+
+#Merge into one df for plotting
+df<- data.frame(Sig=as.factor(SigLevels), Blocked=blocked_NSig, Unblocked=unblocked_NSig)
+df<- melt(df)
+df$Order<- c(rep(2,3), rep(1,3))
+
+#plot:
+p<- ggplot(df, aes(x=reorder(Sig, -value), y=value, fill=variable, group=Order))+
+        geom_bar(position="dodge", stat="identity")+
+        scale_fill_manual(values=c(Blocked="firebrick3", Unblocked="turquoise3"))+
+        theme_classic()+
+        xlab("Signficance threshold (p<)")+
+        ylab("Number of Significant miRs")+
+        theme(axis.title.x=element_text(size=16, face="bold"),
+              axis.title.y=element_text(size=16, face="bold"),
+              axis.text.x= element_text(size=14, face="bold", color="black"),
+              axis.text.y=element_text(size=14, face="bold", color="black"),
+              legend.title = element_blank(),
+              legend.text = element_text(size=14, face="bold"),
+              legend.background = element_rect(fill=NA, size=1, 
+                                  linetype="solid", color="black"),
+              legend.position = c(.72,.9),
+              panel.border = element_rect(colour = "black", fill=NA, size=2))
+
+
+```
+
+#Figure 5C
+```{r}
+#Get miRs that are specific to blocked/unblocked at each sig level
+blocked_unique<-list()
+unblocked_unique<- list()
+
+for (i in 1:length(blocked_Sig)){
+        blocked<- blocked_Sig[[i]]
+        unblocked<- unblocked_Sig[[i]]
+        blocked_unique[[i]]<- blocked[!(rownames(blocked) %in% rownames(unblocked)),]
+        unblocked_unique[[i]]<- unblocked[!(rownames(unblocked)%in% rownames(blocked)),]
+}
+
+
+#get raw counts for the blocked/unblocked specific miRs
+blocked_unique_rawCounts<- lapply(blocked_unique, function(x){
+        counts[rownames(counts) %in% rownames(x),]
+})
+
+unblocked_unique_rawCounts<- lapply(unblocked_unique, function(x){
+        counts[rownames(counts) %in% rownames(x),]
+})
+
+#Get median of the mean raw count for blocked/unblocked specific miRs
+blocked_unique_MedianofMeanRawCounts<- unlist(lapply(blocked_unique_rawCounts, function(x){
+        median(rowMeans(x))
+}))
+
+unblocked_unique_MedianofMeanRawCounts<- unlist(lapply(unblocked_unique_rawCounts, function(x){
+        median(rowMeans(x))
+}))
+
+#Get median rowMeans for all DE miRs common between blocked and unblocked
+CommonDE_RawCounts<-list()
+for (i in 1:length(blocked_Sig)){
+        blocked<- blocked_Sig[[i]]
+        unblocked<- unblocked_Sig[[i]]
+        CommonDE<- rownames(blocked[rownames(blocked) %in% rownames(unblocked),])
+        CommonDE_RawCounts[[i]]<- counts[rownames(counts) %in% CommonDE,]
+}
+
+CommonDE_MedianofMeanRawCounts<- unlist(lapply(CommonDE_RawCounts, function(x){
+        median(rowMeans(x))
+}))
+
+#merge into one df for plotting
+df<- data.frame(Sig=as.factor(SigLevels), 
+                Blocked=blocked_unique_MedianofMeanRawCounts, 
+                Unblocked=unblocked_unique_MedianofMeanRawCounts,
+                CommonDE=CommonDE_MedianofMeanRawCounts)
+                
+
+df<-melt(df)
+df$Order<- c(rep(3,3), rep(2,3), rep(1,3))
+
+#plot:
+p<- ggplot(df, aes(x=reorder(Sig, -value), y=value, fill=variable, group=Order))+
+        geom_bar(position="dodge", stat="identity")+
+        scale_fill_manual(values=c(Blocked="firebrick3", Unblocked="turquoise3", CommonDE="grey"))+
+        theme_classic()+
+        xlab("Signficance threshold (p<)")+
+        ylab("Median Raw counts for DE miRs \n specific to blocked or unblocked DE analysis")+
+        theme(axis.title.x=element_text(size=16, face="bold"),
+              axis.title.y=element_text(size=16, face="bold"),
+              axis.text.x= element_text(size=14, face="bold", color="black"),
+              axis.text.y=element_text(size=14, face="bold", color="black"),
+              legend.title = element_blank(),
+              legend.text = element_text(size=10, face="bold"),
+              legend.background = element_rect(fill=NA, size=1, 
+                                  linetype="solid", color="black"),
+              legend.position = c(.88,.9),
+              panel.border = element_rect(colour = "black", fill=NA, size=2))
+
+```
+
+
+Plot these differences in DE miRNAs for 3 different cutoffs. Three graphs:
+
+1) Number of DE species for blocked/unblocked at 3 sig cutoffs
+2) Number of DE Species UNIQUE to that group for blocked/unblocked at 3 sig cutoffs
+3) Median raw read count for these UNIQUE DE species at 3 sig cutoffs
+
+```{r}
+UnblockedSig<-noblocker_AvB
+BlockedSig<- blocker_AvB
+SigLevel<-0.01
+RawCounts<-counts
+
+#Get data frame of sig miRNAs for blocked and unblocked at given significance level
+  NBSig<-UnblockedSig[UnblockedSig$padj<SigLevel,]
+  BSig<- BlockedSig[BlockedSig$padj<SigLevel,]
+  
+  #Get DE miRNA specific to blocked and unblocked
+  DEInUB<- rownames(as.data.frame(BSig)) %in% rownames(as.data.frame(NBSig))
+  DEInB<- rownames(as.data.frame(NBSig)) %in% rownames(as.data.frame(BSig))
+  OnlyBlockedDE<- BSig[!DEInUB,]
+  OnlyUnBlockedDE<- BSig[!DEInB,]
+  
+  #Get raw counts for these miRNAs
+  counts_onlyblockedDE<- RawCounts[rownames(RawCounts) %in% rownames(OnlyBlockedDE),]
+  counts_onlyblockedDE<- counts_onlyblockedDE[,c(1:6,9:14)]
+  counts_onlyblockedDE<-counts_onlyblockedDE[order(counts_onlyblockedDE$A.0, decreasing=TRUE),]
+  
+  counts_onlyunblockedDE<- RawCounts[rownames(RawCounts) %in% rownames(OnlyUnBlockedDE),]
+  counts_onlyunblockedDE<- counts_onlyunblockedDE[,c(1:6,9:14)]
+  counts_onlyunblockedDE<-counts_onlyunblockedDE[order(counts_onlyunblockedDE$A.1, decreasing=TRUE),]
+  
+  return(list(counts_onlyblockedDE, counts_onlyunblockedDE))
+```
+
+
+```{r}
+#Merge blocker and unblocked lists, for each sig level.Only keeping species that are DE in both analyses
+Sig.01<- merge(as.data.frame(blocker_AvB[blocker_AvB$padj<0.01,]),
+               as.data.frame(noblocker_AvB[noblocker_AvB$padj<0.01,]), by=0)
+Sig.01Counts<- counts[rownames(counts)%in% Sig.01$Row.names,]
+
+Sig.05<- merge(as.data.frame(blocker_AvB[blocker_AvB$padj<0.05,]),
+               as.data.frame(noblocker_AvB[noblocker_AvB$padj<0.05,]), by=0)
+Sig.05Counts<- counts[rownames(counts)%in% Sig.05$Row.names,]
+
+Sig.1<- merge(as.data.frame(blocker_AvB[blocker_AvB$padj<0.1,]),
+               as.data.frame(noblocker_AvB[noblocker_AvB$padj<0.1,]), by=0)
+Sig.1Counts<- counts[rownames(counts)%in% Sig.1$Row.names,]
+
+#padj<0.01
+Median_All_0.01<-median(rowMeans(Sig.01Counts))
+Sig_Counts_Blocked_0.01<- GetCounts_UniqueDEmiRNA(blocker_AvB, noblocker_AvB, 0.01, counts)[[1]]
+Sig_Counts_UnBlocked_0.01<- GetCounts_UniqueDEmiRNA(blocker_AvB, noblocker_AvB, 0.01, counts)[[2]]
+Median_Blocked_0.01<- median(rowMeans(Sig_Counts_Blocked_0.01[,1:6,])) #14.33333
+Median_UnBlocked_0.01<-median(rowMeans(Sig_Counts_UnBlocked_0.01[,7:12,])) #651
+NSig_Blocked_0.01<-nrow(Sig_Counts_Blocked_0.01) #30
+NSig_UnBlocked_0.01<-nrow(Sig_Counts_UnBlocked_0.01) #16
+
+#padj<0.05
+Median_All_0.05<-median(rowMeans(Sig.05Counts))
+Sig_Counts_Blocked_0.05<- GetCounts_UniqueDEmiRNA(blocker_AvB, noblocker_AvB, 0.05, counts)[[1]]
+Sig_Counts_UnBlocked_0.05<- GetCounts_UniqueDEmiRNA(blocker_AvB, noblocker_AvB, 0.05, counts)[[2]]
+Median_Blocked_0.05<-median(rowMeans(Sig_Counts_Blocked_0.05[,1:6,])) #12.33333
+Median_UnBlocked_0.05<-median(rowMeans(Sig_Counts_UnBlocked_0.05[,7:12,])) #249.4167
+NSig_Blocked_0.05<-nrow(Sig_Counts_Blocked_0.05) #56
+NSig_UnBlocked_0.05<-nrow(Sig_Counts_UnBlocked_0.05) #30
+
+#padj<0.1
+Median_All_0.1<-median(rowMeans(Sig.1Counts))
+Sig_Counts_Blocked_0.1<- GetCounts_UniqueDEmiRNA(blocker_AvB, noblocker_AvB, 0.1, counts)[[1]]
+Sig_Counts_UnBlocked_0.1<- GetCounts_UniqueDEmiRNA(blocker_AvB, noblocker_AvB, 0.1, counts)[[2]]
+Median_Blocked_0.1<-median(rowMeans(Sig_Counts_Blocked_0.1[,1:6,])) #8
+Median_UnBlocked_0.1<-median(rowMeans(Sig_Counts_UnBlocked_0.1[,7:12,])) #254.6667
+NSig_Blocked_0.1<-nrow(Sig_Counts_Blocked_0.1) #77
+NSig_UnBlocked_0.1<-nrow(Sig_Counts_UnBlocked_0.1) #33
+
+#Dataframe summarizing n sig miRNAs + median counts for sig miRNAs specific to blocked/unblocked, for the 3 different significance levels
+Sig_BvNB<- data.frame(SignificanceLevel= as.factor(c(rep(0.01, 2), rep(0.05 ,2), rep(0.1, 2))),
+                      SignificantSpecies=c(nrow(blocker_AvB[blocker_AvB$padj<0.01,]), 
+                                           nrow(noblocker_AvB[noblocker_AvB$padj<0.01,]),
+                                           nrow(blocker_AvB[blocker_AvB$padj<0.05,]),
+                                           nrow(noblocker_AvB[noblocker_AvB$padj<0.05,]),
+                                           nrow(blocker_AvB[blocker_AvB$padj<0.1,]),
+                                           nrow(noblocker_AvB[noblocker_AvB$padj<0.1,])),
+                      UniqueSignificantSpecies=c(NSig_Blocked_0.01, NSig_UnBlocked_0.01,
+                                           NSig_Blocked_0.05, NSig_UnBlocked_0.05,
+                                           NSig_Blocked_0.1, NSig_UnBlocked_0.1),
+                      MedianUniqueCounts= c(Median_Blocked_0.01, Median_UnBlocked_0.01,
+                                            Median_Blocked_0.05, Median_UnBlocked_0.05,
+                                            Median_Blocked_0.1, Median_UnBlocked_0.1),
+                      BlockerStatus= c(rep(c("Blocked", "Unblocked"), 3)))
+
+BvNB_MedianCounts<- data.frame(SignificanceLevel=as.factor(c(rep(0.01,3), rep(0.05,3), rep(0.1,3))), 
+                               MedianCounts=c(Median_Blocked_0.01, Median_UnBlocked_0.01,Median_All_0.01,
+                                              Median_Blocked_0.05, Median_UnBlocked_0.05,Median_All_0.05,
+                                              Median_Blocked_0.1, Median_UnBlocked_0.1,Median_All_0.1),
+                               BlockerStatus= c(rep(c("Blocked", "Unblocked", "All"), 3)))
+BvNB_MedianCounts$BlockerStatus<-factor(BvNB_MedianCounts$BlockerStatus, levels=c("Blocked", "Unblocked", "All"))
+
+#Plot this data on four separate graphs
+p_NSpecies<- ggplot(Sig_BvNB, aes(y=SignificantSpecies, x=SignificanceLevel, fill=BlockerStatus))+
+  geom_bar(position="dodge", stat="identity")+
+  theme_classic()+
+  xlab("Significance Level Threshold")+
+  ylab("Number of significantly DE species")+
+  scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="blue3"))+
+  ylim(0,200)+
+  theme(axis.text.y   = element_text(size=10, colour = "black"),
+        axis.title.y  = element_text(size=12, colour = "black"),
+        axis.text.x   = element_text(size=10, colour = "black"),
+        axis.title.x  = element_text(size=12, colour = "black"),
+        panel.border = element_rect(colour = "black", fill=NA, size=2),
+        legend.title=element_blank(),
+        legend.position = c(.85,.96),
+        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
+        axis.text.x.bottom  =element_text(size=15),
+        legend.key.size = unit(.4, "cm"),
+        legend.spacing.y = unit(0, "mm"))
+  
+p_UniqueNSpecies<-  ggplot(Sig_BvNB, aes(y=UniqueSignificantSpecies, x=SignificanceLevel, fill=BlockerStatus))+
+  geom_bar(position="dodge", stat="identity")+
+  theme_classic()+
+  xlab("Significance Level Threshold")+
+  ylab("Number of significantly DE species (for species unique to specific sample group)")+
+  scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="blue3"))+
+  ylim(0,200)+
+  theme(axis.text.y   = element_text(size=10, colour = "black"),
+        axis.title.y  = element_text(size=12, colour = "black"),
+        axis.text.x   = element_text(size=10, colour = "black"),
+        axis.title.x  = element_text(size=12, colour = "black"),
+        panel.border = element_rect(colour = "black", fill=NA, size=2),
+        legend.title=element_blank(),
+        legend.position = c(.85,.96),
+        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
+        axis.text.x.bottom  =element_text(size=15),
+        legend.key.size = unit(.4, "cm"),
+        legend.spacing.y = unit(0, "mm")) 
+
+p_MedianCounts<- ggplot(Sig_BvNB, aes(y=MedianUniqueCounts, x=SignificanceLevel, fill=BlockerStatus))+
+  geom_bar(position="dodge", stat="identity")+
+  theme_classic()+
+  xlab("Significance Level Threshold")+
+  ylab("Median raw counts (for species unique to specific sample group)")+
+  scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="blue3"))+
+  theme(axis.text.y   = element_text(size=10, colour = "black"),
+        axis.title.y  = element_text(size=12, colour = "black"),
+        axis.text.x   = element_text(size=10, colour = "black"),
+        axis.title.x  = element_text(size=12, colour = "black"),
+        panel.border = element_rect(colour = "black", fill=NA, size=2),
+        legend.title=element_blank(),
+        legend.position = c(.85,.96),
+        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
+        axis.text.x.bottom  =element_text(size=15),
+        legend.key.size = unit(.4, "cm"),
+        legend.spacing.y = unit(0, "mm"))
+
+p_MedianCounts<- ggplot(BvNB_MedianCounts, aes(y=MedianCounts, x=SignificanceLevel, fill=BlockerStatus))+
+  geom_bar(position="dodge", stat="identity")+
+  theme_classic()+
+  xlab("Significance Level Threshold")+
+  ylab("Median raw counts (for species unique to specific sample group)")+
+  scale_fill_manual("legend", values=c("Blocked"="firebrick3", "Unblocked"="blue3", "All"="gray"))+
+  theme(axis.text.y   = element_text(size=10, colour = "black"),
+        axis.title.y  = element_text(size=12, colour = "black"),
+        axis.text.x   = element_text(size=10, colour = "black"),
+        axis.title.x  = element_text(size=12, colour = "black"),
+        panel.border = element_rect(colour = "black", fill=NA, size=2),
+        legend.title=element_blank(),
+        legend.position = c(.85,.9),
+        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
+        axis.text.x.bottom  =element_text(size=15),
+        legend.key.size = unit(.4, "cm"),
+        legend.spacing.y = unit(0, "mm"))
+  
+
+#grid.arrange(p_NSpecies+ggtitle(""),p_UniqueNSpecies, p_MedianCounts+ggtitle(""), nrow=1)
+
+#ggarrange(p_NSpecies, p_UniqueNSpecies, p_MedianCounts, nrow=1)
+
+```
