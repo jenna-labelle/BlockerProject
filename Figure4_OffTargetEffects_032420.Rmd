@@ -1,0 +1,229 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+libraries:
+```{r}
+suppressPackageStartupMessages(library(metaseqR))
+suppressPackageStartupMessages(library(DESeq2))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(ggrepel))
+```
+
+
+#Figure 4: Off target effects
+plotting padj/log2/raw counts
+
+
+Functions
+```{r}
+#Create metadata and DESeq2 object, then run DESeq2
+
+RunDESeq2<- function(counts,meta, collapseRep=TRUE) {
+  #create DESeq2 object- just based on samplegroup (blockerstatus)
+  #will add samples to model later (i.e., pairwise analysis)
+  dds<- DESeqDataSetFromMatrix(countData=counts, 
+                               colData=meta, 
+                               design=~sampleGroup)
+  #Collapse technical replicates using internal DESeq2 function
+  if (collapseRep ==TRUE){
+    dds<- collapseReplicates(dds, dds$sample)
+  }
+  
+  #Create model that takes into account sample differences
+  ddsMF<- dds
+  design(ddsMF)<- formula(~Patient + sampleGroup)
+  
+  #run DESeq2
+  dds<- DESeq(ddsMF)
+  
+  return(dds)
+}
+
+#Get DE results
+GetDEResults<- function(dds){
+  res<- results(dds)
+  res<- na.omit(res)
+  resOrdered<- res[order(res$padj),]
+  print(nrow(resOrdered[resOrdered$padj<0.05,]))
+  print(nrow(resOrdered[resOrdered$padj<0.01,]))
+  return(resOrdered)
+}
+```
+
+
+#Read in data and downsample
+
+```{r}
+#readwd<-"Z:/Channing_miRNA_Blocker_Test/BlockerProject/BlockerProject/RawData/"
+#countsInput<- read.csv(paste(readwd, "miRNA_CLmiRDeep2Results_AllSamples_DefaultmiRDeep2Settings.csv", sep=""))
+countsInput<- read.csv("C:/Users/Jenna/Documents/BlockerProject/miRNA_CLmiRDeep2Results_AllSamples_DefaultmiRDeep2Settings.csv")
+rownames(countsInput)<-countsInput$X
+countsInput<- countsInput[,-1]
+countsInput<- countsInput[,c(1,3,5,7,9,11,13,15,2,4,6,8,10,12,14,16)]
+colnames(countsInput)<- c(paste(c("A:low", "A:medium", "A:high", "B:low", "B:medium", "B:high", "C", "D"), "-Unblocked",sep=""),
+                          paste( c("A:low", "A:medium", "A:high","B:low", "B:medium", "B:high", "C", "D"), "-Blocked",sep="" ))
+
+#Downsample to common depth
+counts<- downsample.counts(countsInput, set.seed(42)) #9,989,167 lowest B.570.0
+
+#Convert values to integer
+counts<-as.data.frame(apply(counts, 2, as.integer))
+rownames(counts)<- rownames(countsInput)
+```
+
+Reformat, create metadata
+```{r}
+#rename rows, removing input info
+colnames(counts)<- c(rep("A.0", 3), rep("B.0", 3), "C.0", "D.0", rep("A.1", 3), rep("B.1", 3), "C.1", "D.1")
+
+#Create metadata- will be used in all analyses- when collapsing technical replicates and when leaving separate:
+sampleGroup<- as.factor(c(rep("Unblocked", 8), rep("Blocked", 8))) #set blocker status
+sample<- colnames(counts) #this column is used to collapse technical replicates
+Patient<- as.factor(c(rep("A", 3), rep("B", 3), "C", "D", rep("A", 3), rep("B", 3), "C", "D")) #this column is to control for sample to sample differences
+meta<- data.frame(sample, sampleGroup, Patient)
+```
+
+
+#Perform DE
+Same as in "FINAL_032320_Figure2_GlobalEffects"- figure 2C
+
+Filtering: only keep species with at least 1 CPM in at least 1 sample in BOTH blocked and unblocked groups
+        Note: this is not the final figure 2c input matrix. We want to include the 3 targets and miR-25-3p so we           can include it in the graph later
+
+Technical replicates in samples A and B are collapsed, pairwise analysis
+
+
+Filter count matrix:
+Remove all species that don't meet a cpm threshold: >1 cpm in at least 1 sample in each group
+```{r}
+#Calculate cpm
+counts_cpm<- counts /colSums(counts) *1000000
+
+#Remove all species that don't have at least 1 unblocked sample with cpm > 1
+UnblockedPass<- counts_cpm[rowSums(counts_cpm[,1:8]>1)>=1,] #2006/1807 removed- a lot of unblocked don't meet threshold. makes sense.
+
+#Remove all species that don't have at least 1 blocked sample with cpm> 1
+BlockedandUnblockedPass<- UnblockedPass[rowSums(UnblockedPass[,9:16]>1)>=1,] #8 more removed
+
+#Get species that passed, filter counts based on this
+counts_CPMfilter<- counts[rownames(counts) %in% rownames(BlockedandUnblockedPass),]
+```
+
+
+
+Create dds object, run DESeq2
+```{r}
+#Run DESeq2
+#Technical replicates are collapsed and pairwise analysis performed
+dds<- RunDESeq2(counts_CPMfilter,meta,TRUE)
+```
+
+Extract DESeq2 results 
+```{r}
+resOrdered<- GetDEResults(dds)
+#43 DE miRNAs- padj <0.05
+#26 DE miRNAs- padj <0.01
+
+sig<- as.data.frame(resOrdered[resOrdered$padj<0.05,])
+sig<- sig[,c(1,2,6)]
+```
+
+
+```{r}
+#Add in raw count data for these miRNAs- across all 16 libraries
+counts_cpm<- counts/colSums(counts) * 1000000
+RawCounts<- rowMeans(counts_cpm[rownames(counts_cpm) %in% rownames(sig),])
+OT<- merge(sig, RawCounts, by=0)
+colnames(OT)<- c("Species", "baseMean", "log2FoldChange", "padj", "MeanRawCounts")
+
+#Annotate by whether species is a target miR
+ActualTargets<- c('hsa-miR-486-5p','hsa-miR-92a-3p','hsa-miR-451a')
+OT$Target<- OT$Species %in% ActualTargets
+
+#Entire list of all species in target family
+Target_92<- rownames(counts[grep("miR-92", rownames(counts))[5:8],])
+Target_451<- rownames(counts[grep("miR-451", rownames(counts))[11],])
+Target_486<- rownames(counts[grep("miR-486", rownames(counts)),])
+Target_25<- rownames(counts[grep("miR-25", rownames(counts)),])
+TargetFamilies<- c(Target_451,Target_486,Target_92, Target_25)
+OT$TargetFamily<- OT$Species %in% TargetFamilies
+OT$Color<- as.factor(rowSums(OT[,c(6,7)]))
+OT$Color<- gsub(0, "Non-Target miR", OT$Color)
+OT$Color<- gsub(1, "miR in Target Family", OT$Color)
+OT$Color<- gsub(2, "Target miR", OT$Color)
+
+
+#set which miRs to be labeled on graph
+SubsetToLabel<- OT[OT$Color %in% c("Target miR", "miR in Target Family"),]
+SubsetToLabel$Species<- gsub("hsa-", "", SubsetToLabel$Species)
+```
+
+```{r}
+write.csv(OT, paste(wd,"OffTargetStats_032620.csv", sep=""))
+```
+
+```{r}
+#plot
+p<-ggplot(OT,aes(x=log2FoldChange, y= padj, fill=Color))+
+  geom_point(aes(size=MeanRawCounts), pch=21, color="black")+
+  scale_size_continuous(range = c(.5, 30), guide=FALSE)+
+  scale_x_continuous(limits = c(-6, 7))+
+  scale_y_continuous(limits = c(-0.008, .05))+
+  theme_classic()+
+  xlab("log2 foldchange of differential expression")+
+  ylab("Adjusted p value")+
+  geom_vline(xintercept=0,linetype="dotted", color= "black", size=1.25)+
+  guides(colour = guide_legend(override.aes = list(size=5)))+
+  geom_text_repel(data=SubsetToLabel, aes(x=log2FoldChange, y=padj, 
+                                          label=SubsetToLabel$Species),
+                                          size=3.5, fontface= "bold",
+                                          nudge_y = 0.0035, point.padding = 1.7, 
+                                          box.padding = 0.5)+
+  scale_fill_manual(values=c("orange","black", "red"))+
+  theme(axis.text.y   = element_text(size=12, face= "bold", colour = "black"),
+        axis.title.y  = element_text(size=16, face= "bold", colour = "black"),
+        axis.title.x  = element_text(size=16, face="bold", colour = "black"),
+        axis.text.x  = element_text(size=12, face="bold", colour = "black"),
+        legend.background = element_rect(fill=NA, size=1, 
+                                         linetype="solid", color="black"),
+        legend.title=element_blank(),
+        legend.key.size = unit(.4, "cm"),
+        legend.spacing.y = unit(0, "mm"),
+        legend.position = c(.8,.93),
+        panel.border = element_rect(colour = "black", fill=NA, size=2),
+        legend.text = element_text(size=13, face="bold"))
+
+p
+
+```
+
+Which miRs are in the danger zone?
+```{r}
+#Positive log2 fold change and p<0.01 and at least 100 CPM and not a Target
+DZ<- OT[(OT$log2FoldChange>0 & OT$padj<0.01 & OT$Color!="Target miR" & OT$MeanRawCounts>50), ]
+
+#raw counts of species in the danger zone
+DZ_counts<-  counts[rownames(counts) %in% DZ$Species,]
+DZ_counts$A0<- rowMeans(DZ_counts[,1:3])
+DZ_counts$B0<- rowMeans(DZ_counts[,4:6])
+DZ_counts$A1<- rowMeans(DZ_counts[,9:11])
+DZ_counts$B1<- rowMeans(DZ_counts[,12:14])
+DZ_counts<-DZ_counts[,c(17,18,7,8,19,20,15,16)]
+DZ_counts$Species<-rownames(DZ_counts)
+
+DZ_melt<-melt(DZ_counts)
+DZ_melt$Sample<- substr(DZ_melt$variable,1,1)
+DZ_melt$Status<-str_sub(DZ_melt$variable, start=-1)
+
+p<-ggplot(DZ_melt, aes(x=Species, y=value, fill=Status))+
+        geom_bar(position="dodge", stat="identity")
+```
+
+
+
+
+
+
+
