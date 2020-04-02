@@ -285,7 +285,6 @@ TopSpecies<- TopSpecies[order(TopSpecies$Unblocked, decreasing=TRUE),]
 TopSpecies<- TopSpecies[1:20, 17:18]
 
 
-
 #calculate Percentage of total reads- will be secondary y axis on plot
 Unblocked_Top<- rowMeans(counts[rownames(counts) %in% rownames(TopSpecies), 1:8])
 Unblocked_percentage<-as.data.frame(Unblocked_Top/mean(colSums(counts[,1:8]))*100)
@@ -322,8 +321,15 @@ TopSpecies_Plot$SpeciesOrder<- rep(1:21,2)
 TopSpecies_Plot$StatusOrder<- c(rep(1,21), rep(2,21))
 TopSpecies_Plot$CPM<- as.integer(TopSpecies_Plot$CPM)
 
+SecAxisBreaks<-seq(0,60, by=10)
+SecAxisLabels<-paste(seq(0,60,by=10), "%", sep="")
+YaxisLimits<-c(0,600000)
+YaxisBreaks<-seq(0,600000, by=100000)
+YaxisLabels<-c("0", "100,000", "200,000", "300,000", "400,000", "500,000", "600,000")
 
-p<- ggplot(TopSpecies_Plot, aes(x=reorder(species, + SpeciesOrder), 
+
+PlotRankSum<- function(df,SecAxisBreaks=SecAxisBreaks,SecAxisLabels=SecAxisLabels,YaxisLimits=YaxisLimits,YaxisBreaks=YaxisBreaks,YaxisLabels=YaxisLabels){
+        p<-ggplot(df, aes(x=reorder(species, + SpeciesOrder), 
                                 y=CPM,
                                 group=StatusOrder,
                                 fill=factor(BlockerStatus, levels=c("Blocked", "Unblocked"))))+
@@ -333,32 +339,227 @@ p<- ggplot(TopSpecies_Plot, aes(x=reorder(species, + SpeciesOrder),
         scale_y_continuous(name = "Counts Per Million",
                            sec.axis = sec_axis( trans=~.*.0001, 
                                                 name="Percentage of Total Reads", 
-                                                breaks=seq(0,50, by=10),
-                                                labels=paste(seq(0,50,by=10), "%", sep="")),
-                           limits=c(0,500000),
-                           breaks= seq(0,500000, by=100000),
-                           labels=c("0", "100,000", "200,000", "300,000", "400,000", "500,000"))+
+                                                breaks=seq(0,60, by=10),
+                                                labels=paste(seq(0,60,by=10), "%", sep="")),
+                           limits=c(0,600000),
+                           breaks=seq(0,600000, by=100000) ,
+                           labels=c("0", "100,000", "200,000", "300,000", "400,000", "500,000", "600,000"))+
         scale_fill_manual("", values=c("Blocked"="firebrick3", "Unblocked"="turquoise3"))+
         theme(axis.text.y   = element_text(size=14, colour = "black", face="bold"),
-                axis.title.y  = element_text(size=18, colour = "black", face="bold"),
+                axis.title.y  = element_text(size=11, colour = "black", face="bold"),
                 axis.text.x  = element_text(size=14, colour = "black", face="bold", angle=45, hjust=1),
                 legend.background = element_rect(fill=NA, size=1, 
                                          linetype="solid", color="black"),
                 legend.title=element_blank(),
                 legend.key.size = unit(.4, "cm"),
                 legend.spacing.y = unit(0, "mm"),
-                legend.position = c(.84,.88),
-                legend.text = element_text(size=18, face="bold"),
+                legend.position = c(.84,.8),
+                legend.text = element_text(size=12, face="bold"),
                 panel.border = element_rect(colour = "black", fill=NA, size=2))
+        return(p)
+        
+        
+}
+
+PlotRankSum(TopSpecies_Plot)
+```
+
+
+Alternative plotting:
+#Option 1: Top 20, mean across blocked/unblocked libraries, split by sample
+```{r}
+#Collapse technical replicates for A and B
+cpm$A.0<- rowMeans(cpm[,1:3])
+cpm$B.0<- rowMeans(cpm[,4:6])
+cpm$A.1<- rowMeans(cpm[,9:11])
+cpm$B.1<- rowMeans(cpm[,12:14])
+cpm<- cpm[,c(17,18,7,8,19,20,15,16)]
+
+#split into 4 dataframes
+CPM_Samples<- list(cpm[,c(1,5)], cpm[,c(2,6)], cpm[,c(3,7)], cpm[,c(4,8)])
+
+#Get top n species in unblocked libraries in all 4 samples
+Topn<-20
+CPM_Top20<- lapply(CPM_Samples, function(x) {x[order(x[,1], decreasing=TRUE),]})
+CPM_Top20<- lapply(CPM_Top20, function(x){x[1:Topn,]})
+
+#Get number of CPM for all species not in top 20 
+CPM_Top20_AllOthers<- list()
+for (i in 1:length(CPM_Top20)){
+        df<- CPM_Top20[[i]]
+        miRs<- rownames(df)
+        total<- colSums(df)
+        df[Topn+1,]<- 1000000-total
+        rownames(df)<- c(miRs, "AllOthers")
+        colnames(df)<- c("Unblocked", "Blocked")
+        df$species<-rownames(df)
+        CPM_Top20_AllOthers[[i]]<-df
+        
+}
+
+#Melt dataframes for plotting
+CPM_Top20_Melt<- lapply(CPM_Top20_AllOthers, melt)
+
+#Add columns for ordering graph
+plot_df<-list()
+for (i in 1:length(CPM_Top20_Melt)){
+     df<- CPM_Top20_Melt[[i]]
+     colnames(df)<- c("species", "BlockerStatus", "CPM")
+     df$SpeciesOrder<- rep(1:(Topn + 1),2)
+     df$StatusOrder<-  c(rep(1,(Topn + 1)), rep(2,(Topn+1)))
+     plot_df[[i]]<-df
+}
+
+
+p<-PlotRankSum(plot_df[[1]])
+
+grid.arrange((PlotRankSum(plot_df[[1]])+ggtitle("SampleA")), 
+             (PlotRankSum(plot_df[[2]])+ggtitle("SampleB")),
+             (PlotRankSum(plot_df[[3]])+ggtitle("SampleC")), 
+             (PlotRankSum(plot_df[[4]])+ggtitle("SampleD")),nrow=2)
+
+```
+
+#Option 2: Top 20, Blocked CPM minus unblocked CPM, split by sample
+
+
+```{r}
+#To top 20 CPMs split by sample, add column for subtracting blocked-unblocked CPMs
+CPM_BminusUB<-list()
+for (i in 1:length(CPM_Top20_AllOthers)){
+        df<-CPM_Top20_AllOthers[[i]]
+        df$UnblockedMinusBlocked<- df$Blocked-df$Unblocked
+        CPM_BminusUB[[i]]<-df[,3:4]
+}
+
+#Melt dataframes for plotting
+CPM_BminusUB_melt<- lapply(CPM_BminusUB, melt)
+
+#Add columns for ordering graph
+plot_df_BminusUB<-list()
+for (i in 1:length(CPM_BminusUB_melt)){
+     df<- CPM_BminusUB_melt[[i]]
+     colnames(df)<- c("species", "BlockerStatus", "CPM")
+     df$SpeciesOrder<- rep(1:(Topn + 1),1)
+     df$StatusOrder<-  c(rep(1,(Topn + 1)))
+     df$BlockerStatus<- rep("Blocked", nrow(df))
+     plot_df_BminusUB[[i]]<-df
+}
+
+
+breaks<-seq(-400000,200000, by=100000)
+labels<-c("-400,000", "-300,000","-200,000","-100,000", 0,"100,000", "200,000")
+yaxis<-"CPM Blocked minus CPM Unblocked"
+grid.arrange(
+    PlotRankSum(plot_df_BminusUB[[1]])+
+        ylim(-450000,350000)+
+        scale_y_continuous(breaks=breaks, 
+                           labels=labels)+
+            ylab(yaxis)+
+            ggtitle("SampleA")+
+            theme(axis.title.y=element_text(size=7)),
+    PlotRankSum(plot_df_BminusUB[[2]])+
+        ylim(-450000,350000)+
+        scale_y_continuous(breaks=breaks, 
+                           labels=labels)+
+            ylab(yaxis)+
+            ggtitle("SampleB")+
+            theme(axis.title.y=element_text(size=7)),
+    PlotRankSum(plot_df_BminusUB[[3]])+
+        ylim(-450000,350000)+
+        scale_y_continuous(breaks=breaks, 
+                           labels=labels)+
+            ylab(yaxis)+
+            ggtitle("SampleC")+
+            theme(axis.title.y=element_text(size=7)),
+    PlotRankSum(plot_df_BminusUB[[4]])+
+        ylim(-450000,350000)+
+        scale_y_continuous(breaks=breaks, 
+                           labels=labels)+
+            ylab(yaxis)+
+            ggtitle("SampleD")+
+            theme(axis.title.y=element_text(size=7)),
+    nrow=2
+        
+)
+
+```
+
+#Option 3: Top 20, %change in blocked CPMs, split by sample.Targets/25-3p not included
+
+
+```{r}
+#To top 20 CPMs split by sample, add column for taking blocked percentage of unblocked
+CPM_BPerUB<-list()
+for (i in 1:length(CPM_Top20_AllOthers)){
+        df<-CPM_Top20_AllOthers[[i]]
+        df$BlockedPer<-(df$Blocked-df$Unblocked)/df$Blocked
+        CPM_BPerUB[[i]]<-df[,3:4]
+}
+
+#Remove rows with negative percentage (targets + 25-3p)
+CPM_BPerUB_NoTargets<-lapply(CPM_BPerUB,function(x){x[x$BlockedPer>0,]})
+
+#Melt dataframes for plotting
+CPM_BPerUB_melt<- lapply(CPM_BPerUB_NoTargets, melt)
+
+#Add columns for ordering graph
+plot_df_BPerUB<-list()
+for (i in 1:length(CPM_BPerUB_melt)){
+     df<- CPM_BPerUB_melt[[i]]
+     colnames(df)<- c("species", "BlockerStatus", "CPM")
+     df$SpeciesOrder<- rep(1:(nrow(df)),1)
+     df$StatusOrder<-  c(rep(1,(nrow(df))))
+     df$BlockerStatus<- rep("Blocked", nrow(df))
+     plot_df_BPerUB[[i]]<-df
+}
+
+
+breaks<-seq(0,1,by=.25)
+labels<-c("0%", "25%", "50%", "75%", "100%")
+yaxis<-"Percent change in CPM \n (Blocked-Unblocked)/Unblocked"
+ylim<-c(0,1)
+grid.arrange(
+    PlotRankSum(plot_df_BPerUB[[1]])+
+        ylim(ylim)+
+        scale_y_continuous(breaks=breaks, 
+                           labels=labels)+
+            ylab(yaxis)+
+            ggtitle("SampleA")+
+            theme(axis.title.y=element_text(size=9),
+                  legend.position= 'none'),
+    PlotRankSum(plot_df_BPerUB[[2]])+
+        ylim(ylim)+
+        scale_y_continuous(breaks=breaks, 
+                           labels=labels)+
+            ylab(yaxis)+
+            ggtitle("SampleB")+
+            theme(axis.title.y=element_text(size=9),
+                  legend.position= 'none'),
+    PlotRankSum(plot_df_BPerUB[[3]])+
+        ylim(ylim)+
+        scale_y_continuous(breaks=breaks, 
+                           labels=labels)+
+            ylab(yaxis)+
+            ggtitle("SampleC")+
+            theme(axis.title.y=element_text(size=9),
+                  legend.position= 'none'),
+    PlotRankSum(plot_df_BPerUB[[4]])+
+        ylim(ylim)+
+        scale_y_continuous(breaks=breaks, 
+                           labels=labels)+
+            ylab(yaxis)+
+            ggtitle("SampleD")+
+            theme(axis.title.y=element_text(size=9),
+                  legend.position= 'none'),
+    nrow=2
+        
+)
 
 ```
 
 
-
-
 #Figure 2C: Differential expression
-
-
 #Back to using the dds object with technical replicates collapsed:
 
 
