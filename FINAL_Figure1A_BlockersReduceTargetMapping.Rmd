@@ -8,7 +8,7 @@ Import libraries
 suppressPackageStartupMessages(library(metaseqR))
 suppressPackageStartupMessages(library(ggplot2))
 suppressPackageStartupMessages(library(reshape2))
-
+windowsFonts("Arial" = windowsFont("Arial"))
 ```
 
 Functions:
@@ -99,6 +99,17 @@ p<-ggplot(Per_AnyTarget_TwoGroups, aes(y=MeanPercentMapping, x=reorder(Status, -
           axis.text.x.bottom  =element_text(size=20))
  
 ```
+
+```{r}
+#T test comparing blocked and unblocked
+t.test(unname(PercentMapToAnyTarget[1:8]),unname(PercentMapToAnyTarget[9:16]), paired=TRUE)
+#p-value = 3.926e-08
+
+t.test(unname(PercentMapToAnyTarget[1:8]),unname(PercentMapToAnyTarget[9:16]), paired=FALSE)
+#p-value = 1.524e-09
+```
+
+
 
 #3. Figure 1B: Graph % for any target for all 12 samples (A and B, all replicates), grouping by patient then by blocked/unblocked then by ordering input levels (input labels added manually)
 ```{r}
@@ -228,7 +239,6 @@ rowMeans(MapReduction[,9:12])
 #92a reduced by 74%
 
 ```
-
 
 
 
