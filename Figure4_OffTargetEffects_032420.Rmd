@@ -89,8 +89,11 @@ meta<- data.frame(sample, sampleGroup, Patient)
 #Perform DE
 Same as in "FINAL_032320_Figure2_GlobalEffects"- figure 2C
 
-Filtering: only keep species with at least 1 CPM in at least 1 sample in BOTH blocked and unblocked groups
-        Note: this is not the final figure 2c input matrix. We want to include the 3 targets and miR-25-3p so we           can include it in the graph later
+Filtering: 
+
+1)only keep species with at least 1 CPM in at least 2 samples in BOTH blocked and unblocked groups
+2)Targets NOT removed
+        
 
 Technical replicates in samples A and B are collapsed, pairwise analysis
 
@@ -98,14 +101,24 @@ Technical replicates in samples A and B are collapsed, pairwise analysis
 Filter count matrix:
 Remove all species that don't meet a cpm threshold: >1 cpm in at least 1 sample in each group
 ```{r}
-#Calculate cpm
-counts_cpm<- counts /colSums(counts) *1000000
+#Collapse A and B technical replicates
+counts_collapsed<-counts
+counts_collapsed$A.0.c<-rowMeans(counts_collapsed[,1:3])
+counts_collapsed$B.0.c<-rowMeans(counts_collapsed[,4:6])
+counts_collapsed$A.1.c<-rowMeans(counts_collapsed[,9:11])
+counts_collapsed$B.1.c<-rowMeans(counts_collapsed[,12:14])
+counts_collapsed<- counts_collapsed[,c(17,18,7,8,19,20,15,16)]
 
-#Remove all species that don't have at least 1 unblocked sample with cpm > 1
-UnblockedPass<- counts_cpm[rowSums(counts_cpm[,1:8]>1)>=1,] #2006/1807 removed- a lot of unblocked don't meet threshold. makes sense.
+#Calculate cpm. convert to integer
+counts_cpm<- counts_collapsed /colSums(counts_collapsed) *1000000
+counts_cpm<- apply(counts_cpm, 2, as.integer)
+rownames(counts_cpm)<-rownames(counts_collapsed)
+
+#Remove all species that don't have more than 1 unblocked sample with cpm > 1
+UnblockedPass<- counts_cpm[rowSums(counts_cpm[,1:4]>1)>1,] #- #2261 species removed- a lot of unblocked don't meet threshold. makes sense.
 
 #Remove all species that don't have at least 1 blocked sample with cpm> 1
-BlockedandUnblockedPass<- UnblockedPass[rowSums(UnblockedPass[,9:16]>1)>=1,] #8 more removed
+BlockedandUnblockedPass<- UnblockedPass[rowSums(UnblockedPass[,5:8]>1)>1,] #none removed
 
 #Get species that passed, filter counts based on this
 counts_CPMfilter<- counts[rownames(counts) %in% rownames(BlockedandUnblockedPass),]
@@ -123,7 +136,7 @@ dds<- RunDESeq2(counts_CPMfilter,meta,TRUE)
 Extract DESeq2 results 
 ```{r}
 resOrdered<- GetDEResults(dds)
-#43 DE miRNAs- padj <0.05
+#38 DE miRNAs- padj <0.05
 #26 DE miRNAs- padj <0.01
 
 sig<- as.data.frame(resOrdered[resOrdered$padj<0.05,])
@@ -133,10 +146,15 @@ sig<- sig[,c(1,2,6)]
 
 ```{r}
 #Add in raw count data for these miRNAs- across all 16 libraries
-counts_cpm<- counts/colSums(counts) * 1000000
-RawCounts<- rowMeans(counts_cpm[rownames(counts_cpm) %in% rownames(sig),])
-OT<- merge(sig, RawCounts, by=0)
-colnames(OT)<- c("Species", "baseMean", "log2FoldChange", "padj", "MeanRawCounts")
+Unblocked_RawCounts<- as.data.frame(rowMeans(counts_cpm[rownames(counts_cpm) %in% rownames(sig),1:4]))
+Blocked_RawCounts<- as.data.frame(rowMeans(counts_cpm[rownames(counts_cpm) %in% rownames(sig),5:8]))
+OT<- merge(sig, Unblocked_RawCounts, by=0)
+rownames(OT)<-OT$Row.names
+colnames(OT)<- c("Species", "baseMean", "log2FoldChange", "padj", "MeanRawUnblockedCounts")
+OT<- merge(OT, Blocked_RawCounts, by=0)
+OT<-OT[,-1]
+colnames(OT)<- c("Species", "baseMean", "log2FoldChange", "padj", "MeanRawUnblockedCounts", "MeanRawBlockedCounts")
+OT$MeanRawCounts<- rowMeans(OT[,5:6])
 
 #Annotate by whether species is a target miR
 ActualTargets<- c('hsa-miR-486-5p','hsa-miR-92a-3p','hsa-miR-451a')
@@ -149,7 +167,7 @@ Target_486<- rownames(counts[grep("miR-486", rownames(counts)),])
 Target_25<- rownames(counts[grep("miR-25", rownames(counts)),])
 TargetFamilies<- c(Target_451,Target_486,Target_92, Target_25)
 OT$TargetFamily<- OT$Species %in% TargetFamilies
-OT$Color<- as.factor(rowSums(OT[,c(6,7)]))
+OT$Color<- as.factor(rowSums(OT[,c(8,9)]))
 OT$Color<- gsub(0, "Non-Target miR", OT$Color)
 OT$Color<- gsub(1, "miR in Target Family", OT$Color)
 OT$Color<- gsub(2, "Target miR", OT$Color)
@@ -161,7 +179,7 @@ SubsetToLabel$Species<- gsub("hsa-", "", SubsetToLabel$Species)
 ```
 
 ```{r}
-write.csv(OT, paste(wd,"OffTargetStats_032620.csv", sep=""))
+write.csv(OT, paste(wd,"OffTargetStats_040220.csv", sep=""))
 ```
 
 ```{r}
@@ -220,7 +238,6 @@ DZ_melt$Status<-str_sub(DZ_melt$variable, start=-1)
 p<-ggplot(DZ_melt, aes(x=Species, y=value, fill=Status))+
         geom_bar(position="dodge", stat="identity")
 ```
-
 
 
 
