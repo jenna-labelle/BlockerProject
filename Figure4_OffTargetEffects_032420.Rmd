@@ -99,7 +99,7 @@ Technical replicates in samples A and B are collapsed, pairwise analysis
 
 
 Filter count matrix:
-Remove all species that don't meet a cpm threshold: >1 cpm in at least 1 sample in each group
+Remove all species that don't meet a cpm threshold: >1 cpm in more than 1 sample in each group
 ```{r}
 #Collapse A and B technical replicates
 counts_collapsed<-counts
@@ -238,7 +238,6 @@ DZ_melt$Status<-str_sub(DZ_melt$variable, start=-1)
 p<-ggplot(DZ_melt, aes(x=Species, y=value, fill=Status))+
         geom_bar(position="dodge", stat="identity")
 ```
-
 
 
 
