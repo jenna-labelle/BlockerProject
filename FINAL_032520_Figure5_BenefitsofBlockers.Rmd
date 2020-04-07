@@ -58,6 +58,16 @@ GetCounts_UniqueDEmiRNA<- function(BlockedSig, UnblockedSig, SigLevel, RawCounts
 GetSigSpecies<- function(SigLevel, res){
         return(res[res$padj < SigLevel,])
 }
+
+CollapseAandB<-function(counts){
+        counts$A.0<- rowMeans(counts[,1:3])
+        counts$B.0<- rowMeans(counts[,4:6])
+        counts$A.1<- rowMeans(counts[,9:11])
+        counts$B.1<- rowMeans(counts[,12:14])
+        counts<-counts[,c(17,18,7,8,19,20,15,16)]
+        colnames(counts)<-c("A.0", "B.0", "C.0", "D.0", "A.1", "B.1", "C.1", "D.1")
+        return(counts)
+}
 ```
 
 #Read in data and downsample
@@ -78,6 +88,7 @@ counts<- downsample.counts(countsInput, set.seed(42)) #9,989,167 lowest B.570.0
 #Convert values to integer
 counts<-as.data.frame(apply(counts, 2, as.integer))
 rownames(counts)<- rownames(countsInput)
+rownames(counts)<- gsub("hsa-", "", rownames(counts))
 ```
 
 
@@ -290,6 +301,36 @@ blocker_AvB<- resOrdered
 #25% increase in the number of DE genes!!
 ```
 
+#Supplemental Table 2: all miRs DE in either analysis + whether they were DE in both or one + pvalue + log2 FC + Raw counts for that species
+```{r}
+#merge blocked and unblocked sig miRs together
+Blocker_sig<- as.data.frame(blocker_AvB[blocker_AvB$padj<0.05,c(2,6)])
+colnames(Blocker_sig)<- c("Blocked_Log2FC", "Blocked_padj")
+Noblocker_sig<- as.data.frame(noblocker_AvB[noblocker_AvB$padj<0.05,c(2,6)])
+colnames(Noblocker_sig)<- c("Unblocked_Log2FC", "Unblocked_padj")
+allSig<- merge(Blocker_sig, Noblocker_sig, by=0, all=TRUE) #145 total
+rownames(allSig)<-allSig$Row.names
+
+#Collapse A and B tech replicates
+CountsCollapsed<-CollapseAandB(counts)
+
+#Get mean raw counts of 4 blocked libs and 4 unblocked libs
+RawCounts_Unblocked<-as.data.frame(rowMeans(CountsCollapsed[rownames(CountsCollapsed) %in% rownames(allSig),1:4]))
+colnames(RawCounts_Unblocked)<- "RawCounts_Unblocked"
+
+RawCounts_Blocked<-as.data.frame(rowMeans(CountsCollapsed[rownames(CountsCollapsed) %in% rownames(allSig),5:8]))
+colnames(RawCounts_Blocked)<- "RawCounts_Blocked"
+
+#Merge counts with sig values
+allSigWithUnblocked<-merge(allSig,RawCounts_Unblocked,by=0)
+rownames(allSigWithUnblocked)<- allSigWithUnblocked$Row.names
+allSigWithCounts<-merge(allSigWithUnblocked, RawCounts_Blocked, by=0)
+
+allSigWithCounts<-allSigWithCounts[,-1]
+write.csv(allSigWithCounts, paste(wd, "New_AllDEmiRs_BandUBCounts_BlockedandUnblockedAnalysis.csv",sep=""))
+```
+
+
 #Figure 5B
 ```{r}
 #Get list of sig miRs at given sig levels 
@@ -328,6 +369,52 @@ p<- ggplot(df, aes(x=reorder(Sig, -value), y=value, fill=variable, group=Order))
 ```
 
 #Figure 5C
+```{r}
+#Get miRs DE at 0.05 or 0.01
+Blocked_5<-as.data.frame(blocked_Sig[[2]]) #119
+Blocked_1<-as.data.frame(blocked_Sig[[3]]) #75
+Unblocked_5<-as.data.frame(unblocked_Sig[[2]]) #89
+Unblocked_1<-as.data.frame(unblocked_Sig[[3]]) #60
+
+#Get miRs specific to blocked or unblocked or in both
+Blocked_5_Unique<- Blocked_5[!(rownames(Blocked_5) %in% rownames(Unblocked_5)),] #56
+Blocked_1_Unique<- Blocked_1[!(rownames(Blocked_1) %in% rownames(Unblocked_1)),] #30
+Unblocked_5_Unique<- Unblocked_5[!(rownames(Unblocked_5) %in% rownames(Blocked_5)),] #26
+Unblocked_1_Unique<- Unblocked_1[!(rownames(Unblocked_1) %in% rownames(Blocked_1)),] #15
+Both_5<-merge(Blocked_5, Unblocked_5, by=0)
+rownames(Both_5)<-Both_5$Row.names
+Both_5<-Both_5[,-1]
+Both_1<-merge(Blocked_1, Unblocked_1, by=0)
+rownames(Both_1)<-Both_1$Row.names
+Both_1<-Both_1[,-1]
+
+#Get raw counts for these species- using collapsed counts
+Blocked_5_Counts<-CountsCollapsed[rownames(CountsCollapsed)%in% rownames(Blocked_5_Unique),]
+Blocked_1_Counts<-CountsCollapsed[rownames(CountsCollapsed)%in% rownames(Blocked_1_Unique),]
+Unblocked_5_Counts<-CountsCollapsed[rownames(CountsCollapsed)%in% rownames(Unblocked_5_Unique),]
+Unblocked_1_Counts<-CountsCollapsed[rownames(CountsCollapsed)%in% rownames(Unblocked_1_Unique),]
+Both_5_Counts<-CountsCollapsed[rownames(CountsCollapsed) %in% rownames(Both_5),]
+Both_1_Counts<-CountsCollapsed[rownames(CountsCollapsed) %in% rownames(Both_1),]
+
+#row means --> median of these raw counts. A couple of options:
+#row means across all 8 libraries
+median(rowMeans(Blocked_5_Counts)) #27
+median(rowMeans(Blocked_1_Counts)) #39
+median(rowMeans(Unblocked_5_Counts)) #166
+median(rowMeans(Unblocked_1_Counts)) #103
+median(rowMeans(Both_5_Counts)) #552
+median(rowMeans(Both_1_Counts)) #553
+
+#row means across 4 libraries
+median(rowMeans(Blocked_5_Counts[,5:8])) #45
+median(rowMeans(Blocked_1_Counts[,5:8])) #65
+median(rowMeans(Unblocked_5_Counts[,1:4])) #43
+median(rowMeans(Unblocked_1_Counts[,1:4])) #32
+
+
+```
+
+
 ```{r}
 #Get miRs that are specific to blocked/unblocked at each sig level
 blocked_unique<-list()
