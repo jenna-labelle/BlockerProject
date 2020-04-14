@@ -242,4 +242,3 @@ rowMeans(MapReduction[,9:12])
 
 
 
-
