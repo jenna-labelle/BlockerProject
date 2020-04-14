@@ -899,4 +899,3 @@ Putting A-D together on one plot:
 grid.arrange(pA, pB, pC, pD, nrow=2)
 #Export as 040620_Figure_AllSamplesLogCPM_CPMFilteringGreaterThanTwoSamples
 ```
-
