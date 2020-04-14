@@ -1,0 +1,227 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+Import libraries
+```{r}
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(reshape2))
+suppressPackageStartupMessages(library(purrr))
+suppressPackageStartupMessages(library(tibble))
+suppressPackageStartupMessages(library(metaseqR))
+suppressPackageStartupMessages(library(ggplot2))
+```
+
+#Read in unblocked data
+```{r}
+unblocked_readwd<-"Z:/Small_RNA/BaseSpace/"
+
+#Get filenames needed
+filenames1<-c("Hersh_PT8_Rerun_Small_RNA_11072017_counts",
+             "Hersh-miRNA-PT9Reruns_Small_RNA_12182017_counts")
+
+filenames2<-c("9256704449-2_Small_RNA_05252017_counts",
+             "9416449660-3_Small_RNA_06282017_counts",
+             "9597590455-6_Small_RNA_06292017_counts",
+             "9959254099-1_Small_RNA_10062017_counts",
+             "10272166057-5_Small_RNA_08212017_counts",
+             "10284133418-9_Small_RNA_08212017_counts")
+
+filenames3<- c("AERD_miRNA_Sequencing_Small_RNA_10062017_counts",
+               "Kelan_Viva_miRNA_Small_RNA_09272017_counts"
+        
+)
+
+filenames<-c(filenames1, filenames2, filenames3)
+#Read in files
+unblocked_input<-list()
+for (i in 1:length(filenames)){
+        df<-read.csv(paste(unblocked_readwd, filenames[i], ".csv", sep=""), stringsAsFactors = FALSE)
+        df<-df[-1,]
+        unblocked_input[[i]]<-df
+}
+
+
+```
+
+#Can skip this: reading in pilot data as comparison
+```{r}
+wd<- "//Cifs2/rcdata$/Channing_miRNA_Blocker_Test/"
+BaseSpaceDownSampled_Counts<- read.csv(paste(wd, "OtherResults/DownSampledCounts_BaseSpaceMatureIsomir_metaseqR_121119.csv", sep =""))
+rownames(BaseSpaceDownSampled_Counts)<- BaseSpaceDownSampled_Counts$X
+BaseSpaceDownSampled_Counts<- BaseSpaceDownSampled_Counts[,-1]
+
+#remove "-1" "-5p" etc from rownames
+
+BaseSpaceDownSampled_Counts$X<-sub("^([^-]*-[^-]*-[^-]*).*", "\\1", rownames(BaseSpaceDownSampled_Counts))
+
+unblocked_all_input<-BaseSpaceDownSampled_Counts[,c(17,1:8)]
+blocked_all_input<-BaseSpaceDownSampled_Counts[,c(17,9:16)]
+```
+
+
+#Merge into one dataset, filter based on total reads per sample and per miRNA, calculate CPM, calculate % mapping to each target
+```{r}
+#Merge into one dataset
+unblocked_all_input<- unblocked_input %>% purrr::reduce(full_join, by = "X")
+
+#Convert to integer, remove NA
+Rownames<-unblocked_all_input$X
+rownames(unblocked_all_input)<-Rownames
+unblocked_all<-unblocked_all_input[,-1]
+unblocked_all<- as.data.frame(apply(unblocked_all, 2, as.integer))
+rownames(unblocked_all)<-Rownames
+unblocked_all<-na.omit(unblocked_all)
+
+#Remove any samples with fewer than 2million total reads
+unblocked_RemoveSample<- unblocked_all[,colSums(unblocked_all)>2000000]
+
+#Downsample to common depth
+unblocked_DS<- downsample.counts(unblocked_RemoveSample, set.seed(42)) 
+#unblocked_DS$X<-Rownames
+unblocked_DS$X<-rownames(unblocked_DS)
+
+#sort and remove sequences from rownames, and convert to integer
+unblocked_sort<-  unblocked_DS[order(unblocked_DS[,1], decreasing = TRUE),]
+unblocked_sort$X<-rownames(unblocked_sort) 
+unblocked_sort$X<- gsub(".*_", "", unblocked_sort$X)
+
+#Collapse counts- multiple entries for a single species are collapsed into one
+unblocked_collapse<- unblocked_sort %>% as.tibble() %>% group_by(X) %>% summarise_all(funs(if(is.numeric(.)) sum(.) else "Total")) %>% as.data.frame
+rownames(unblocked_collapse)<-unblocked_collapse$X
+unblocked_collapse<-unblocked_collapse[,-1]
+
+#Remove any species with < 10 total counts  
+unblocked_RemoveLow<- unblocked_collapse[rowSums(unblocked_collapse) >10,]
+
+#Convert to CPM- optional
+#unblocked_CPM<-unblocked_RemoveLow/colSums(unblocked_RemoveLow) *1000000
+unblocked_CPM<-unblocked_RemoveLow
+
+#Get total number of CPM for 3 targets-will be multiple lines, grep for targets.Sum together target CPMs
+AllTargets<-c("hsa-miR-486", "hsa-miR-92", "hsa-miR-451")
+
+TargetCPM_1<-lapply(AllTargets, function(x) {unblocked_CPM[grep(x, rownames(unblocked_CPM), ignore.case = TRUE),]}) #get targets
+TargetCPM_2<-lapply(TargetCPM_1, function(x) {x[!(rownames(x) %in% c("hsa-miR-4511", "hsa-miR-4510","hsa-mir-4511", "hsa-mir-4510")),]}) #remove miR-4511/4510
+TargetCPM_3<- lapply( TargetCPM_2, function(x) {colSums(x[,1:ncol(x)])}) #merge multiple species in a family into one
+TargetCPM<- as.data.frame(do.call(rbind, TargetCPM_3))
+rownames(TargetCPM)<-AllTargets
+TargetCPM<- TargetCPM[,order(colnames(TargetCPM))]
+
+
+#Get percentage of total CPMs that 3 targets make up
+unblocked_CPM<-unblocked_CPM[,order(colnames(unblocked_CPM))]
+unblocked_TargetPercentageCPM<-TargetCPM/colSums(unblocked_CPM) *100
+
+```
+
+
+#Read in blocked data
+```{r}
+blocked_readwd<-"Z:/VDAART_YR3-Cordblood_miRNA/BaseSpace/"
+
+#Get filenames needed
+filenames<-c("23527812628-0_VDAART_YR3CB_PL1_miRNASeq _Small_RNA_01032020_counts",
+             "23540507146-7_VDAART_YR3CB_PL2_miRNASeq_Small_RNA_01082020_counts",
+             "23755852530-3_VDAART_YR3CB_PL3_miRNASeq _Small_RNA_01162020_counts",
+             "23884915575-9_VDAART_YR3CB_PL4_miRNASeq_Small_RNA_01282020_counts",
+             "23917983511-7_VDAART_YR3CB_PL5_miRNASeq _Small_RNA_01292020_counts",
+             "23935284105-4_VDAART_YR3CB_PL6_miRNASeq_Small_RNA_02032020_counts",
+             "24018710165-9_VDAART_YR3CB_PL7_miRNASeq _Small_RNA_02072020_counts",
+             "24128985641-2_VDAART_YR3CB_PL8_miRNASeq _Small_RNA_02112020_counts",
+             "24183561317-1_VDAART_YR3CB_PL9_miRNASeq _Small_RNA_02202020_counts",
+             "24241070716-8_VDAART_YR3CB_PL10_miRNASeq_Small_RNA_02282020_counts")
+
+#Read in files
+blocked_input<-list()
+for (i in 1:length(filenames)){
+        df<-read.csv(paste(blocked_readwd, filenames[i], ".csv", sep=""), stringsAsFactors = FALSE)
+        df<-df[-1,]
+        blocked_input[[i]]<-df
+}
+
+```
+
+#Merge into one dataset, filter based on total reads per sample and per miRNA, calculate CPM, calculate % mapping to each target
+```{r}
+#Merge into one dataset
+blocked_all_input<- blocked_input %>% purrr::reduce(full_join, by = "X")
+
+#Convert to integer, remove NA
+Rownames<-blocked_all_input$X
+rownames(blocked_all_input)<-Rownames
+blocked_all<-blocked_all_input[,-1]
+blocked_all<- as.data.frame(apply(blocked_all, 2, as.integer))
+rownames(blocked_all)<-Rownames
+blocked_all<-na.omit(blocked_all)
+
+
+#Remove any samples with fewer than 2million total reads
+blocked_RemoveSample<- blocked_all[,colSums(blocked_all)>2000000]
+
+#Downsample to common depth
+blocked_DS<- downsample.counts(blocked_RemoveSample, set.seed(42)) 
+#blocked_DS$X<-Rownames
+blocked_DS$X<-rownames(blocked_DS)
+
+#sort and remove sequences from rownames, and convert to integer
+blocked_sort<-  blocked_DS[order(blocked_DS[,1], decreasing = TRUE),]
+blocked_sort$X<-rownames(blocked_sort)
+blocked_sort$X<- gsub(".*_", "", blocked_sort$X)
+
+
+#Collapse counts- multiple entries for a single species are collapsed into one
+blocked_collapse<- blocked_sort %>% as.tibble() %>% group_by(X) %>% summarise_all(funs(if(is.numeric(.)) sum(.) else "Total")) %>% as.data.frame
+rownames(blocked_collapse)<-blocked_collapse$X
+blocked_collapse<-blocked_collapse[,-1]
+
+#Remove any species with < 10 total counts  
+blocked_RemoveLow<- blocked_collapse[rowSums(blocked_collapse) >10,]
+
+#Convert to CPM- optional
+#blocked_CPM<-blocked_RemoveLow/colSums(blocked_RemoveLow) *1000000
+blocked_CPM<-blocked_RemoveLow
+
+
+#Get total number of CPM for 3 targets-will be multiple lines, grep for targets.Sum together target CPMs
+AllTargets<-c("hsa-miR-486", "hsa-miR-92", "hsa-miR-451")
+TargetCPM_1<-lapply(AllTargets, function(x) {blocked_CPM[grep(x, rownames(blocked_CPM), ignore.case=TRUE),]}) #get targets
+TargetCPM_2<-lapply(TargetCPM_1, function(x) {x[!(rownames(x) %in% c("hsa-miR-4511", "hsa-miR-4510","hsa-mir-4511", "hsa-mir-4510")),]}) #remove miR-4511/4510
+TargetCPM_3<- lapply( TargetCPM_2, function(x) {colSums(x[,1:ncol(x)])}) #merge multiple species in a family into one
+TargetCPM<- as.data.frame(do.call(rbind, TargetCPM_3))
+rownames(TargetCPM)<-AllTargets
+TargetCPM<- TargetCPM[,order(colnames(TargetCPM))]
+
+
+#Get percentage of total CPMs that 3 targets make up
+blocked_CPM<-blocked_CPM[,order(colnames(blocked_CPM))]
+blocked_TargetPercentageCPM<-TargetCPM/colSums(blocked_CPM) *100
+```
+
+
+#Plot
+```{r}
+#Add column for blocked/unblocked to "TargetPercentageCPM" dataframes
+unblocked_TargetPercentageCPM$BlockerStatus<-rep("Unblocked", nrow(unblocked_TargetPercentageCPM))
+blocked_TargetPercentageCPM$BlockerStatus<-rep("Blocked", nrow(blocked_TargetPercentageCPM))
+
+#reformat for plotting
+df_unblocked<-unblocked_TargetPercentageCPM
+df_unblocked$Species<- rownames(df_unblocked)
+df_unblocked_melt<- melt(df_unblocked, by="Species")
+
+df_blocked<-blocked_TargetPercentageCPM
+df_blocked$Species<- rownames(df_blocked)
+df_blocked_melt<- melt(df_blocked, by="Species")
+
+#rbind unblocked and blocked dataframes together
+bind_TargetPercentageCPM<- rbind(df_unblocked_melt, df_blocked_melt)
+
+
+p<-ggplot(bind_TargetPercentageCPM, aes(x = Species, y =value, fill=BlockerStatus)) +
+        geom_boxplot()
+```
+
+
+
+
