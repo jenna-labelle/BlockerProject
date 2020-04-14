@@ -877,4 +877,3 @@ Write potential off targets to file
 ```{r}
 write.csv(OT, paste(wd, "PotentialOffTargets_FromCL_TargetsIncludedAnalysis.csv", sep ="") )
 ```
-
