@@ -10,6 +10,76 @@ suppressPackageStartupMessages(library(purrr))
 suppressPackageStartupMessages(library(tibble))
 suppressPackageStartupMessages(library(metaseqR))
 suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(DESeq2))
+suppressPackageStartupMessages(library(pheatmap))
+suppressPackageStartupMessages(library(ggrepel))
+```
+Functions
+```{r}
+PlotHeatmap<- function(OrderedResults, rld, metadata, nspecies, MinSubtract, MaxSubtract, fontsize){
+  #Select top sig DE miRNAs
+  topgenes<- rownames(OrderedResults[1:nspecies,])
+  mat<- assay(rld)[topgenes,]
+  mat<- mat - rowMeans(mat)
+  colnames(mat)<-paste(metadata$Patient," (",metadata$sampleGroup, ")",sep="")
+  
+  #Heatmap settings
+  mat_breaks<- seq(min(mat-MinSubtract), max(mat-MaxSubtract), length.out=75)
+
+  #Create metadata- to be used to color code to show which group the sample belongs to
+  metadata<- data.frame(Group=metadata$sampleGroup, 
+                        row.names=paste(metadata$Patient," (",metadata$sampleGroup, ")",sep=""),
+                        Sample=metadata$Patient)
+
+  #plot heatmap
+  p<-pheatmap(mat, breaks = mat_breaks, 
+            color =colorRampPalette( c("red", "black", "green"), space="rgb")(100),
+            show_rownames = TRUE, show_colnames=FALSE,
+            annotation = metadata,
+            annotation_colors= list(
+              Group=c(Blocked="firebrick3", Unblocked="turquoise3"),
+                      Sample=c(A="goldenrod1", 
+                               B="violetred3", 
+                               C="skyblue3", 
+                               D="darkolivegreen4")),
+            fontsize_row = fontsize,fontsize=12,treeheight_row=0,
+            border_color= NA)
+  return(p)
+}
+
+CPMPlot<- function(CPM, Sample){
+  #Get subset of CPM for labeling points- points that are both sig DE and are higher in unblocked than   blocked (beneath the slope line)
+  CPM$HigherInUnblocked<- (CPM$Blocker-CPM$NoBlocker)<0
+  SubsetToLabel<- CPM[CPM$HigherInUnblocked=="TRUE" &CPM$Color!="Not DE",]
+  
+  #Plot
+  p<- ggplot(CPM, aes(x=NoBlocker, y=Blocker, color=Color))+
+  geom_point(size=3)+
+  geom_abline(slope=1, color="red")+
+  scale_colour_manual(values=c("red","black", "blue"))+
+  theme_classic()+
+  xlim(0,6)+
+  ylim(0,6)+
+  xlab(paste("Log of Unblocked Counts Per Million"))+
+  ylab(paste("Log of Blocked Counts Per Million"))+
+  geom_text_repel(data=SubsetToLabel, aes(x=NoBlocker, y=Blocker, label=rownames(SubsetToLabel)), color="black",  size=5, fontface="bold")+
+  ggtitle(Sample)+
+  theme(axis.text.y   = element_text(size=14, colour = "black", face="bold"),
+        axis.title.y  = element_text(size=14, colour = "black", face="bold"),
+        axis.title.x  = element_text(size=14, colour = "black", face="bold"),
+        axis.text.x  = element_text(size=14, colour = "black", face="bold"),
+        legend.background = element_rect(fill=NA, size=1, 
+                                         linetype="solid", color="black"),
+        legend.title=element_blank(),
+        legend.key.size = unit(.4, "cm"),
+        legend.spacing.y = unit(0, "mm"),
+        legend.position = c(.15,.892),
+        legend.text = element_text(size=18, face="bold"),
+        panel.border = element_rect(colour = "black", fill=NA, size=2),
+        plot.title=element_text(size=14, face="bold"))
+  return(p)
+  
+}
 ```
 
 #Read in unblocked data
@@ -32,7 +102,16 @@ filenames3<- c("AERD_miRNA_Sequencing_Small_RNA_10062017_counts",
         
 )
 
-filenames<-c(filenames1, filenames2, filenames3)
+filenames4<-c("Hersh_PT8_Rerun_Small_RNA_11072017_counts",
+             "Hersh-miRNA-PT9Reruns_Small_RNA_12182017_counts",
+             "9256704449-2_Small_RNA_05252017_counts",
+             "9416449660-3_Small_RNA_06282017_counts",
+             "9597590455-6_Small_RNA_06292017_counts",
+             "10272166057-5_Small_RNA_08212017_counts",
+             "10284133418-9_Small_RNA_08212017_counts"
+            )
+
+filenames<-filenames4
 #Read in files
 unblocked_input<-list()
 for (i in 1:length(filenames)){
@@ -60,7 +139,7 @@ blocked_all_input<-BaseSpaceDownSampled_Counts[,c(17,9:16)]
 ```
 
 
-#Merge into one dataset, filter based on total reads per sample and per miRNA, calculate CPM, calculate % mapping to each target
+#Merge into one dataset, filter based on total reads per sample and per miRNA
 ```{r}
 #Merge into one dataset
 unblocked_all_input<- unblocked_input %>% purrr::reduce(full_join, by = "X")
@@ -91,11 +170,23 @@ unblocked_collapse<- unblocked_sort %>% as.tibble() %>% group_by(X) %>% summaris
 rownames(unblocked_collapse)<-unblocked_collapse$X
 unblocked_collapse<-unblocked_collapse[,-1]
 
-#Remove any species with < 10 total counts  
+#write to file for later use
+writewd<-"C:/Users/Jenna/Documents/BlockerProject/"
+write.csv(unblocked_collapse, paste(writewd, "LargeCohort_RawData_Unblocked.csv", sep=""))
+```
+
+
+#Further filtering + plotting % map to targets
+```{r}
+#read in counts- pre-processing in above chunk
+unblocked_collapse<-read.csv(paste(writewd, "LargeCohort_RawData_Unblocked.csv"), row.names = "X")
+
+#Remove any species with < 10 total counts-optional
 unblocked_RemoveLow<- unblocked_collapse[rowSums(unblocked_collapse) >10,]
+unblocked_RemoveLow<-unblocked_collapse
 
 #Convert to CPM- optional
-#unblocked_CPM<-unblocked_RemoveLow/colSums(unblocked_RemoveLow) *1000000
+unblocked_CPM<-unblocked_RemoveLow/colSums(unblocked_RemoveLow) *1000000
 unblocked_CPM<-unblocked_RemoveLow
 
 #Get total number of CPM for 3 targets-will be multiple lines, grep for targets.Sum together target CPMs
@@ -113,24 +204,23 @@ TargetCPM<- TargetCPM[,order(colnames(TargetCPM))]
 unblocked_CPM<-unblocked_CPM[,order(colnames(unblocked_CPM))]
 unblocked_TargetPercentageCPM<-TargetCPM/colSums(unblocked_CPM) *100
 
+#Optional: add row with percent mapping to non-target
+unblocked_TargetPercentageCPM["AllOthers" ,] <- 100-colSums(unblocked_TargetPercentageCPM)
+
 ```
 
 
 #Read in blocked data
 ```{r}
-blocked_readwd<-"Z:/VDAART_YR3-Cordblood_miRNA/BaseSpace/"
+blocked_readwd<-"Z:/COPD/miRNAseq/BaseSpace/"
 
 #Get filenames needed
-filenames<-c("23527812628-0_VDAART_YR3CB_PL1_miRNASeq _Small_RNA_01032020_counts",
-             "23540507146-7_VDAART_YR3CB_PL2_miRNASeq_Small_RNA_01082020_counts",
-             "23755852530-3_VDAART_YR3CB_PL3_miRNASeq _Small_RNA_01162020_counts",
-             "23884915575-9_VDAART_YR3CB_PL4_miRNASeq_Small_RNA_01282020_counts",
-             "23917983511-7_VDAART_YR3CB_PL5_miRNASeq _Small_RNA_01292020_counts",
-             "23935284105-4_VDAART_YR3CB_PL6_miRNASeq_Small_RNA_02032020_counts",
-             "24018710165-9_VDAART_YR3CB_PL7_miRNASeq _Small_RNA_02072020_counts",
-             "24128985641-2_VDAART_YR3CB_PL8_miRNASeq _Small_RNA_02112020_counts",
-             "24183561317-1_VDAART_YR3CB_PL9_miRNASeq _Small_RNA_02202020_counts",
-             "24241070716-8_VDAART_YR3CB_PL10_miRNASeq_Small_RNA_02282020_counts")
+filenames<-c("21801069331-0_GECOPD_miRNASeq _Small_RNA_11222019_counts",
+             "21801069331-0_GECOPD_miRNASeq _Small_RNA_12032019_counts",
+             "21801069331-0_GECOPD_miRNASeq _Small_RNA_12042019_counts",
+             "21801069331-0_GECOPD_miRNASeq _Small_RNA_12102019_counts",
+             "21801069331-0_GECOPD_miRNASeq _Small_RNA_12112019_counts",
+             "24200081892-6_GECOPD_P6_miRNASeq _Small_RNA_03092020_counts")
 
 #Read in files
 blocked_input<-list()
@@ -142,7 +232,7 @@ for (i in 1:length(filenames)){
 
 ```
 
-#Merge into one dataset, filter based on total reads per sample and per miRNA, calculate CPM, calculate % mapping to each target
+#Merge into one dataset, filter based on total reads per sample and per miRNA
 ```{r}
 #Merge into one dataset
 blocked_all_input<- blocked_input %>% purrr::reduce(full_join, by = "X")
@@ -175,8 +265,18 @@ blocked_collapse<- blocked_sort %>% as.tibble() %>% group_by(X) %>% summarise_al
 rownames(blocked_collapse)<-blocked_collapse$X
 blocked_collapse<-blocked_collapse[,-1]
 
+#write to csv for later use
+write.csv(blocked_collapse, paste(writewd, "LargeCohort_RawData_blocked.csv", sep=""))
+```
+
+#Further filtering + plotting % map to targets
+```{r}
+#read in counts- pre-processing in above chunk
+blocked_collapse<-read.csv(paste(writewd, "LargeCohort_RawData_Unblocked.csv"), row.names = "X")
+
 #Remove any species with < 10 total counts  
 blocked_RemoveLow<- blocked_collapse[rowSums(blocked_collapse) >10,]
+blocked_RemoveLow<-blocked_collapse
 
 #Convert to CPM- optional
 #blocked_CPM<-blocked_RemoveLow/colSums(blocked_RemoveLow) *1000000
@@ -196,10 +296,13 @@ TargetCPM<- TargetCPM[,order(colnames(TargetCPM))]
 #Get percentage of total CPMs that 3 targets make up
 blocked_CPM<-blocked_CPM[,order(colnames(blocked_CPM))]
 blocked_TargetPercentageCPM<-TargetCPM/colSums(blocked_CPM) *100
+
+#Optional: add row with percent mapping to non-target
+blocked_TargetPercentageCPM["AllOthers" ,] <- 100-colSums(blocked_TargetPercentageCPM)
 ```
 
 
-#Plot
+#Plot- 530 and 537 total samples
 ```{r}
 #Add column for blocked/unblocked to "TargetPercentageCPM" dataframes
 unblocked_TargetPercentageCPM$BlockerStatus<-rep("Unblocked", nrow(unblocked_TargetPercentageCPM))
@@ -214,14 +317,170 @@ df_blocked<-blocked_TargetPercentageCPM
 df_blocked$Species<- rownames(df_blocked)
 df_blocked_melt<- melt(df_blocked, by="Species")
 
+#Add column for ordering
+df_unblocked_melt$Order<- rep(1, nrow(df_unblocked_melt))
+df_blocked_melt$Order<- rep(2, nrow(df_blocked_melt))
+
 #rbind unblocked and blocked dataframes together
 bind_TargetPercentageCPM<- rbind(df_unblocked_melt, df_blocked_melt)
+bind_TargetPercentageCPM$Order<- rep(c(1,2,3,4), nrow(bind_TargetPercentageCPM)/4)
+bind_TargetPercentageCPM$BlockerStatus<-factor(bind_TargetPercentageCPM$BlockerStatus, levels=c("Unblocked", "Blocked"))
 
 
-p<-ggplot(bind_TargetPercentageCPM, aes(x = Species, y =value, fill=BlockerStatus)) +
-        geom_boxplot()
+
+
+p<-ggplot(bind_TargetPercentageCPM, aes(x = reorder(Species, Order), y =value, fill=BlockerStatus)) +
+        geom_boxplot()+
+        ylab("Percent of total reads mapping")+
+        xlab("")+
+        theme_classic()+
+        scale_fill_manual("", values=c("Blocked"="firebrick3", "Unblocked"="turquoise3"))+
+        theme(axis.title.y = element_text(face="bold", size=14),
+              axis.text.y = element_text(face="bold", size=12, color="black"),
+              axis.text.x = element_text(face="bold", size=12, color="black"),
+              legend.text = element_text(face="bold", size=10),
+              legend.title=element_blank(),
+              panel.border = element_rect(colour = "black", fill=NA, size=2),
+              strip.background = element_rect(color = "black", size = 2),
+              legend.position=c(.72,.9),
+              legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"))
+
+
+```
+
+```{r}
+#Tiny t test- blocked and unblocked dataset 4
+miR486<- list(df_blocked_melt[grep("hsa-miR-486", df_blocked_melt$Species),c(1,2,4)],
+               df_unblocked_melt[grep("hsa-miR-486", df_unblocked_melt$Species),c(1,2,4)])
+t.test(miR486[[1]]$value, miR486[[2]]$value) #p<2.2e-16 #means: 19.19062  69.61180 
+
+miR451<- list(df_blocked_melt[grep("hsa-miR-451", df_blocked_melt$Species),c(1,2,4)],
+               df_unblocked_melt[grep("hsa-miR-451", df_unblocked_melt$Species),c(1,2,4)])
+t.test(miR451[[1]]$value, miR451[[2]]$value) #p<2.2e-16 #means:  4.940708  1.462336
+
+miR92<- list(df_blocked_melt[grep("hsa-miR-92", df_blocked_melt$Species),c(1,2,4)],
+               df_unblocked_melt[grep("hsa-miR-92", df_unblocked_melt$Species),c(1,2,4)])
+t.test(miR92[[1]]$value, miR92[[2]]$value) #p<2.2e-16  #means: 9.03835  22.05245 
+
+AllOthers<- list(df_blocked_melt[grep("AllOthers", df_blocked_melt$Species),c(1,2,4)],
+               df_unblocked_melt[grep("AllOthers", df_unblocked_melt$Species),c(1,2,4)])
+t.test(AllOthers[[1]]$value, AllOthers[[2]]$value) #p<2.2e-16  #means: 66.830321  6.873419
 ```
 
 
+#Differential expression- unpaired, DESeq2
 
+Filter, merge and export count matrices
+```{r}
+#Remove genes without > 1 CPM in 50% of unblocked/blocked samples- in CPM data
+blocked_CPMPass<-blocked_CPM[rowSums(blocked_CPM>1)>(ncol(blocked_CPM)/2),]
+unblocked_CPMPass<-unblocked_CPM[rowSums(unblocked_CPM>1)>(ncol(unblocked_CPM)/2),]
+
+#For the genes that passsed the CPM threshold, get raw (downsampled) counts
+blocked_CountsPass<-blocked_RemoveLow[rownames(blocked_RemoveLow) %in% rownames(blocked_CPMPass),]
+unblocked_CountsPass<-unblocked_RemoveLow[rownames(unblocked_RemoveLow) %in% rownames(unblocked_CPMPass),]
+
+#merge blocked and unblocked, keeping all rows
+blocked_CountsPass$geneID<- rownames(blocked_CountsPass)
+unblocked_CountsPass$geneID<-rownames(unblocked_CountsPass)
+counts<- merge(blocked_CountsPass, unblocked_CountsPass, all=TRUE,by="geneID" )
+counts[is.na(counts)]<-0
+
+#Export
+write.csv(counts, paste(blocked_readwd, "LargeCohort_AllSamples_RawCounts_CPMFilter.csv", sep=""))
+
+#Create metadata, export
+meta_blocked<-data.frame(Samples=colnames(blocked_CPMPass), Group="Blocked")
+meta_unblocked<-data.frame(Samples=colnames(unblocked_CPMPass), Group="Unblocked")
+meta<-rbind(meta_blocked,meta_unblocked)
+write.csv(meta, paste(blocked_readwd,"LargeCohort_Metadata.csv",sep=""))
+```
+
+
+Perform differential expression between two groups
+```{r}
+#Import raw counts
+readwd<-"C:/Users/Jenna/Documents/BlockerProject/"
+countsInput<-read.csv(paste(readwd, "LargeCohort_AllSamples_RawCounts_CPMFilter.csv", sep="" ))
+counts<-countsInput
+rownames(counts)<-counts$geneID
+counts<-counts[,3:ncol(counts)]
+
+#Collapse counts-remove everything after 3rd "-" (-1, -5p, etc), then merge and sum together based on new miR IDs
+counts$geneIDs<- sub("^([^-]*-[^-]*-[^-]*).*", "\\1", rownames(counts))
+counts$geneIDs<- gsub("mir", "miR", counts$geneIDs)
+counts_collapsed<-counts %>% group_by(geneIDs) %>% summarise_each(funs(sum)) %>% as.data.frame
+rownames(counts_collapsed)<-counts_collapsed$geneIDs
+counts_collapsed<- counts_collapsed[,2:ncol(counts_collapsed)]
+
+#Import metadata
+meta<- read.csv(paste(readwd,"LargeCohort_Metadata.csv",sep=""))
+
+#Run DESeq2
+dds<-DESeqDataSetFromMatrix(counts_collapsed, meta, design=~Group)
+dds<-DESeq(dds)
+
+#Extract and order results
+res<-na.omit(results(dds))
+resOrdered<-res[order(res$padj),]
+nrow(resOrdered[resOrdered$padj<0.01,]) #385
+nrow(resOrdered[resOrdered$padj<0.05,]) #392
+sig<-resOrdered[resOrdered$padj<0.01,]
+sig<- sig[abs(sig$log2FoldChange)>1,] #281
+
+#Export DE results
+write.csv(resOrdered[resOrdered$padj<0.05,], paste(readwd, "LargeCohort_DESeq2Results_Collapsed_log2FC1.csv", sep=""))
+
+```
+
+```{r}
+#Plot heatmap of DESeq2 results
+rld<-varianceStabilizingTransformation(dds)
+p<-PlotHeatmap(as.data.frame(resOrdered), rld, meta, 100, 0,0,12)
+
+```
+
+#Plot log2 CPM
+```{r}
+#Convert to CPM
+CPM<- counts_collapsed/colSums(counts_collapsed) *1000000
+
+#Get mean CPM for blocked and unblocked for every species
+blockedSamples<-meta[meta$Group=="Blocked",]
+blocked_CPM<-CPM[,colnames(CPM) %in% as.character(blockedSamples$Samples)]
+
+unblockedSamples<-meta[meta$Group=="Unblocked",]
+unblocked_CPM<-CPM[,colnames(CPM) %in% as.character(unblockedSamples$Samples)]
+
+CPM_Mean<-data.frame(Blocker=rowMeans(blocked_CPM), NoBlocker=rowMeans(unblocked_CPM))
+
+
+#log2 of CPM
+CPMLog<- log10(CPM_Mean+1) #+1 optional here
+
+
+#Get miRNA info. Need: whether or not it was targeted + whether or not it was DE
+#Add in target info- add column for whether or not the species was targeted
+ActualTargets<- c('hsa-miR-486','hsa-miR-92a','hsa-miR-451a')
+CPMLog$target<- rownames(CPMLog) %in% ActualTargets
+
+#Add in DE info- using DESeq2 results from targets included analysis. Import data here.
+CPMLog$Sig<- rownames(CPMLog) %in% rownames(sig)
+
+#Add in third column, used to color points in graph. Add together target/sig columns. If it's a target and sig, it'll be 2, if it's just sig it'll be 1, if it's neither it'll be 0.
+CPMLog$Color<- as.factor(rowSums(CPMLog[,3:4]))
+CPMLog$Color<- gsub(1, "DE", CPMLog$Color)
+CPMLog$Color<- gsub(0, "Not DE", CPMLog$Color)
+CPMLog$Color<-gsub(2, "Target", CPMLog$Color)
+CPMLog$Color<-factor(CPMLog$Color, levels=c("DE", "Not DE", "Target"))
+CPMLog<-CPMLog[order(CPMLog$target, decreasing=TRUE),]
+
+
+
+p<-CPMPlot(CPMLog, "Mean")
+
+
+```
+
+```
 
