@@ -147,11 +147,7 @@ PlotHeatmap<- function(OrderedResults, rld, metadata, nspecies, MinSubtract, Max
             fontsize_row = fontsize,fontsize=12,treeheight_row=0,
             border_color= NA)
   return(p)
-}
-
-
-#Plot log of cpm of raw counts- coloring based on whether it's differentially expressed
-CPMPlot<- function(CPM, Sample){
+}CPMPlot<- function(CPM, Sample){
   #Get subset of CPM for labeling points- points that are both sig DE and are higher in unblocked than   blocked (beneath the slope line)
   CPM$HigherInUnblocked<- (CPM$Blocker-CPM$NoBlocker)<0
   SubsetToLabel<- CPM[CPM$HigherInUnblocked=="TRUE" &CPM$Color!="Not DE",]
@@ -184,6 +180,10 @@ CPMPlot<- function(CPM, Sample){
   return(p)
   
 }
+
+
+#Plot log of cpm of raw counts- coloring based on whether it's differentially expressed
+
 
 ```
 
@@ -242,7 +242,7 @@ Prep data for DESeq2, create metadata and DESeq2 object, then run DESeq2:
 colnames(counts)<- c(rep("A.0", 3), rep("B.0", 3), "C.0", "D.0", rep("A.1", 3), rep("B.1", 3), "C.1", "D.1")
 
 #Create metadata- will be used in all analyses- when collapsing technical replicates and when leaving separate:
-sampleGroup<- as.factor(c(rep("Unblocked", 8), rep("Blocked", 8))) #set blocker status
+sampleGroup<- factor(c(rep("Unblocked", 8), rep("Blocked", 8)), levels=c("Unblocked", "Blocked")) #set blocker status
 sample<- colnames(counts) #this column is used to collapse technical replicates
 Patient<- as.factor(c(rep("A", 3), rep("B", 3), "C", "D", rep("A", 3), rep("B", 3), "C", "D")) #this column is to control for sample to sample differences
 meta<- data.frame(sample, sampleGroup, Patient)
