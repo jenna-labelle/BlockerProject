@@ -78,8 +78,8 @@ Reformat, create metadata
 #rename rows, removing input info
 colnames(counts)<- c(rep("A.0", 3), rep("B.0", 3), "C.0", "D.0", rep("A.1", 3), rep("B.1", 3), "C.1", "D.1")
 
-#Create metadata- will be used in all analyses- when collapsing technical replicates and when leaving separate:
-sampleGroup<- as.factor(c(rep("Unblocked", 8), rep("Blocked", 8))) #set blocker status
+#Create metadata
+sampleGroup<- factor(c(rep("Unblocked", 8), rep("Blocked", 8)), levels=c("Unblocked", "Blocked")) #set blocker status
 sample<- colnames(counts) #this column is used to collapse technical replicates
 Patient<- as.factor(c(rep("A", 3), rep("B", 3), "C", "D", rep("A", 3), rep("B", 3), "C", "D")) #this column is to control for sample to sample differences
 meta<- data.frame(sample, sampleGroup, Patient)
@@ -157,7 +157,7 @@ colnames(OT)<- c("Species", "baseMean", "log2FoldChange", "padj", "MeanRawUnbloc
 OT$MeanRawCounts<- rowMeans(OT[,5:6])
 
 #Annotate by whether species is a target miR
-ActualTargets<- c('hsa-miR-486-5p','hsa-miR-92a-3p','hsa-miR-451a')
+ActualTargets<- c('miR-486-5p','miR-92a-3p','miR-451a')
 OT$Target<- OT$Species %in% ActualTargets
 
 #Entire list of all species in target family
@@ -179,14 +179,14 @@ SubsetToLabel$Species<- gsub("hsa-", "", SubsetToLabel$Species)
 ```
 
 ```{r}
-write.csv(OT, paste(wd,"OffTargetStats_040220.csv", sep=""))
+write.csv(OT, paste(wd,"OffTargetStats_042020.csv", sep=""))
 ```
 
 ```{r}
 #plot
 p<-ggplot(OT,aes(x=log2FoldChange, y= padj, fill=Color))+
   geom_point(aes(size=MeanRawCounts), pch=21, color="black")+
-  scale_size_continuous(range = c(.5, 30), guide=FALSE)+
+  scale_size_continuous(range = c(1, 50), guide=FALSE)+
   scale_x_continuous(limits = c(-6, 7))+
   scale_y_continuous(limits = c(-0.008, .05))+
   theme_classic()+
@@ -195,7 +195,43 @@ p<-ggplot(OT,aes(x=log2FoldChange, y= padj, fill=Color))+
   geom_vline(xintercept=0,linetype="dotted", color= "black", size=1.25)+
   guides(colour = guide_legend(override.aes = list(size=5)))+
   geom_text_repel(data=SubsetToLabel, aes(x=log2FoldChange, y=padj, 
-                                          label=SubsetToLabel$Species),
+                                          label=Species),
+                                          size=3.5, fontface= "bold",
+                                          nudge_y = 0.0035, point.padding = 1.7, 
+                                          box.padding = 0.5)+
+  scale_fill_manual(values=c("orange","black", "red"))+
+  theme(axis.text.y   = element_text(size=12, face= "bold", colour = "black"),
+        axis.title.y  = element_text(size=16, face= "bold", colour = "black"),
+        axis.title.x  = element_text(size=16, face="bold", colour = "black"),
+        axis.text.x  = element_text(size=12, face="bold", colour = "black"),
+        legend.background = element_rect(fill=NA, size=1, 
+                                         linetype="solid", color="black"),
+        legend.title=element_blank(),
+        legend.key.size = unit(.4, "cm"),
+        legend.spacing.y = unit(0, "mm"),
+        legend.position = c(.8,.93),
+        panel.border = element_rect(colour = "black", fill=NA, size=2),
+        legend.text = element_text(size=13, face="bold"))
+
+p
+
+#legend
+dummy<-data.frame(MeanRawCounts=c(10,100,1000,10000,100000,300000), Species=c("a", "b", "c", "d", "e", "f"),
+                  padj=seq(1,6,1), log2FoldChange=seq(1,6,1))
+
+
+#plot
+p<-ggplot(dummy,aes(x=log2FoldChange, y= padj))+
+  geom_point(aes(size=MeanRawCounts), pch=21, color="black")+
+  scale_size_continuous(range = c(1, 50))
+  
+
+  xlab("log2 foldchange of differential expression")+
+  ylab("Adjusted p value")+
+  geom_vline(xintercept=0,linetype="dotted", color= "black", size=1.25)+
+  guides(colour = guide_legend(override.aes = list(size=5)))+
+  geom_text_repel(data=SubsetToLabel, aes(x=log2FoldChange, y=padj, 
+                                          label=Species),
                                           size=3.5, fontface= "bold",
                                           nudge_y = 0.0035, point.padding = 1.7, 
                                           box.padding = 0.5)+
@@ -216,6 +252,10 @@ p<-ggplot(OT,aes(x=log2FoldChange, y= padj, fill=Color))+
 p
 
 ```
+
+
+
+
 
 Which miRs are in the danger zone?
 ```{r}
