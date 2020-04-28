@@ -39,7 +39,7 @@ My_ANOVA<- function(PM){
 ```
 
 
-1. Read in raw counts data (miRDeep2 Default settings) and downsample to common depth
+1. Read in raw counts data (miRDeep2 Default settings OR BaseSpace counts) and downsample to common depth
 2. Get proportion mapping to any target --> mean % across unblocked/blocked --> plot
 3. Graph % for any target for 8 unblocked vs 8 blocked
 4. Run ANOVA for demonstrating no difference between 3 inputs for A/B
@@ -48,6 +48,7 @@ My_ANOVA<- function(PM){
 
 #1. read in raw counts and downsample
 ```{r}
+#Read in raw couns from default CL miRDeep2 
 #readwd<-"Z:/Channing_miRNA_Blocker_Test/BlockerProject/BlockerProject/RawData/"
 #countsInput<- read.csv(paste(readwd, "miRNA_CLmiRDeep2Results_AllSamples_DefaultmiRDeep2Settings.csv", sep=""))
 countsInput<- read.csv("C:/Users/Jenna/Documents/BlockerProject/miRNA_CLmiRDeep2Results_AllSamples_DefaultmiRDeep2Settings.csv")
@@ -56,18 +57,41 @@ countsInput<- countsInput[,-1]
 countsInput<- countsInput[,c(1,3,5,7,9,11,13,15,2,4,6,8,10,12,14,16)]
 colnames(countsInput)<- c(paste(c("A:low", "A:medium", "A:high", "B:low", "B:medium", "B:high", "C", "D"), "-Unblocked",sep=""),
                           paste( c("A:low", "A:medium", "A:high","B:low", "B:medium", "B:high", "C", "D"), "-Blocked",sep="" ))
+
+#Read in raw counts from Basespace- mature and isomir
+wd<- "C:/Users/Jenna/Documents/BlockerProject/"
+BaseSpace_countsInput<- read.delim(paste(wd, "mirna-blocker_bs_mature-isomirs_raw.txt", sep =""))
+rownames(BaseSpace_countsInput)<- BaseSpace_countsInput$ID
+BaseSpace_counts<-BaseSpace_countsInput[,c(4:ncol(BaseSpace_countsInput))]
+colnames(BaseSpace_counts)<- c(paste(c("A:low", "A:medium", "A:high", "B:low", "B:medium", "B:high", "C", "D"), "-Unblocked",sep=""),
+                          paste( c("A:low", "A:medium", "A:high","B:low", "B:medium", "B:high", "C", "D"), "-Blocked",sep="" ))
+
+        #For basespace input count matrix: merge isomir and mature
+        
+        #Collapse counts-remove everything after 3rd "-" (-1, -5p, etc), then merge and sum together based on new miR IDs
+        BaseSpace_collapsedInput$geneIDs<- sub("^([^-]*-[^-]*-[^-]*).*", "\\1", rownames(BaseSpace_collapsedInput))
+        BaseSpace_collapsedInput$geneIDs<- gsub("mir", "miR", BaseSpace_collapsedInput$geneIDs)
+        
+        #Collapse isomirs and mature toegether
+        BaseSpace_collapsed<-BaseSpace_collapsedInput %>% group_by(geneIDs) %>% summarise_each(funs(sum)) %>% as.data.frame
+        rownames(BaseSpace_collapsed)<-BaseSpace_collapsed$geneIDs
+        BaseSpace_collapsed<- BaseSpace_collapsed[,2:ncol(BaseSpace_collapsed)]
+
+#Set the input matrix to be used
+countsInput<-BaseSpace_collapsed
 ```
 
 Downsample to common depth
 ```{r}
-counts<- downsample.counts(countsInput, set.seed(42)) #9,989,167 lowest B.570.0
+counts<- downsample.counts(countsInput, set.seed(42)) #9,989,167 lowest B.570.0 / 7,970,014 in BaseSpace  (C-blocked)
 ```
 
 
 #2. Figure 1A: Get proportion mapping to any target --> mean % across unblocked/blocked --> plot
 ```{r}
 #Get raw, downsampled counts for all 3 targets for al 16 samples
-MapAnyTarget<- counts[rownames(counts) %in% c("hsa-miR-92a-3p", "hsa-miR-451a", "hsa-miR-486-5p"),]
+MapAnyTarget<- counts[rownames(counts) %in% c("hsa-miR-92a-3p", "hsa-miR-451a", "hsa-miR-486-5p"),] #for CL
+MapAnyTarget<- counts[rownames(counts) %in% c("hsa-miR-92a", "hsa-miR-451a", "hsa-miR-486"),] #for basespace collapsed
 
 #Get percentage of total for all 3 counts for all 16 samples 
 PercentMapTo3Targets<- MapAnyTarget/colSums(counts) * 100
@@ -103,22 +127,32 @@ p<-ggplot(Per_AnyTarget_TwoGroups, aes(y=MeanPercentMapping, x=reorder(Status, -
 ```{r}
 #T test comparing blocked and unblocked
 t.test(unname(PercentMapToAnyTarget[1:8]),unname(PercentMapToAnyTarget[9:16]), paired=TRUE)
-#p-value = 3.926e-08
+#p-value = 3.926e-08 / BS: 7.6e-8
 
 t.test(unname(PercentMapToAnyTarget[1:8]),unname(PercentMapToAnyTarget[9:16]), paired=FALSE)
-#p-value = 1.524e-09
+#p-value = 1.524e-09 / BS: 7.8 e-9
 ```
 
 
 
-#3. Figure 1B: Graph % for any target for all 12 samples (A and B, all replicates), grouping by patient then by blocked/unblocked then by ordering input levels (input labels added manually)
+#3. Figure 1B: Graph % for any target for all 12 samples (A and B, all replicates), grouping by patient then by blocked/unblocked then by ordering input levels (input labels added manually). Optionally, also include samples C and D 
 ```{r}
+#Only A and B
 JustReplicated<-PercentMapToAnyTarget[c(1:6, 9:14)]
 Per_AnyTarget_16Samples<- data.frame(Status=c(rep("Unblocked",6),rep( "Blocked",6)), 
                                      PM=unname(JustReplicated),
                                      Input=gsub(".*:", "", gsub("-.*", "", names(JustReplicated))),
                                      Patient=paste("Sample", substr(names(JustReplicated), 1,1)),
                                      Order = c(1,2,3,7,8,9,4,5,6,10,11,12),
+                                     Sample=gsub("-.*", "", names(JustReplicated)))
+
+#A and B as well as C and D
+JustReplicated<-PercentMapToAnyTarget
+Per_AnyTarget_16Samples<- data.frame(Status=c(rep("Unblocked",8),rep( "Blocked",8)), 
+                                     PM=unname(JustReplicated),
+                                     Input=gsub(".*:", "", gsub("-.*", "", names(JustReplicated))),
+                                     Patient=paste("Sample", substr(names(JustReplicated), 1,1)),
+                                     Order = c(1,2,3,7,8,9,13,15,4,5,6,10,11,12,14,16),
                                      Sample=gsub("-.*", "", names(JustReplicated)))
 
 #plot: 031820_PercentMapping_AnyTarget_14Samples
@@ -137,7 +171,8 @@ p<-ggplot(Per_AnyTarget_16Samples, aes(y=PM, x=reorder(Status,+Order),group= Inp
                                strip.background = element_blank(),
         legend.title=element_blank(),
         legend.text=element_text(size=12, face="bold"),
-        legend.position=c(.85,.9),
+        #legend.position=c(.85,.9), 
+        legend.position=c(.12,.9),
         legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
         strip.text.x = element_text(
         size = 15, color = "black", face = "bold"
@@ -151,19 +186,19 @@ p<-ggplot(Per_AnyTarget_16Samples, aes(y=PM, x=reorder(Status,+Order),group= Inp
 ```{r}
 #Sample A: Unblocked
 A_UB<- My_ANOVA(PercentMapTo3Targets[,1:3])
-#pr(>F) = 0.959
+#pr(>F) = 0.959 /BS: 0.97
 
 #Sample A: Blocked
 A_B<- My_ANOVA(PercentMapTo3Targets[,9:11])
-#pr(>F) = 0.0832
+#pr(>F) = 0.0832 / BS: 0.089
 
 #Sample B: Unblocked
 B_UB<- My_ANOVA(PercentMapTo3Targets[,4:6])
-#pr(>F) = 0.944
+#pr(>F) = 0.944 / BS: 0.952
 
 #Sample B: Blocked
 B_B<- My_ANOVA(PercentMapTo3Targets[,12:14])
-#pr(>F) = 0.06
+#pr(>F) = 0.06 / BS: 0.07
 ```
 
 
@@ -184,7 +219,11 @@ rownames(CollapsedCounts)<-rownames(countsInput)
 c_counts<-downsample.counts(CollapsedCounts)
 
 #Get raw, downsampled counts for all 3 targets for al 16 samples
-c_MapAnyTarget<- c_counts[rownames(c_counts) %in% c("hsa-miR-92a-3p", "hsa-miR-451a", "hsa-miR-486-5p"),]
+c_MapAnyTarget<- c_counts[rownames(c_counts) %in% c("hsa-miR-92a-3p", "hsa-miR-451a", "hsa-miR-486-5p"),] #for CL
+c_MapAnyTarget<- c_counts[rownames(c_counts) %in% c("hsa-miR-92a", "hsa-miR-451a", "hsa-miR-486"),] #For BaseSpace collapsed
+c_MapAnyTarget<-c_counts[rownames(c_counts) %in% c(rownames(counts[grep("mir-486", rownames(counts), ignore.case=TRUE ),]),
+                                                   rownames(counts[grep("mir-451a", rownames(counts), ignore.case=TRUE ),]),
+                                                   rownames(counts[grep("mir-92a", rownames(counts), ignore.case=TRUE ),])),] #for Basespace not collapsed
 
 #Get percentage of total for all 3 counts for all 16 samples 
 c_PercentMapTo3Targets<- c_MapAnyTarget/colSums(c_counts) * 100
@@ -197,7 +236,8 @@ PM_melt$ID<- substr(PM_melt$variable, 1,1)
 PM_melt$Status<- gsub("*.-", "", PM_melt$variable)
 PM_melt$Status<- gsub("Unblocked", "A:UnBlocked",PM_melt$Status)
 PM_melt<- PM_melt[order(PM_melt$ID, PM_melt$species),]
-PM_melt$Order<- 1:24
+#PM_melt$Order<- 1:24 #for command line or Basespace collapsed
+PM_melt$Order<- 1:nrow(c_MapAnyTarget) #For Basespace not collapsed
 
 
 #plot: Figure1C_PercentReduced_AllTargetsSeparately
@@ -234,9 +274,9 @@ MapReduction$CReduce<- (MapReduction$`C-Unblocked` - MapReduction$`C-Blocked`)/M
 MapReduction$DReduce<- (MapReduction$`D-Unblocked` - MapReduction$`D-Blocked`)/MapReduction$`D-Unblocked` *100
 
 rowMeans(MapReduction[,9:12])
-#451a reduced by 42%
-#486-5p reduced by 80%
-#92a reduced by 74%
+#451a reduced by 42% / BS: 44
+#486-5p reduced by 80% / BS: 76
+#92a reduced by 74% / BS: 76
 
 ```
 
