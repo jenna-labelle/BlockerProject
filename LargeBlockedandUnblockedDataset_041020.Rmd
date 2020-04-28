@@ -13,6 +13,7 @@ suppressPackageStartupMessages(library(ggplot2))
 suppressPackageStartupMessages(library(DESeq2))
 suppressPackageStartupMessages(library(pheatmap))
 suppressPackageStartupMessages(library(ggrepel))
+windowsFonts("Arial" = windowsFont("Arial"))
 ```
 Functions
 ```{r}
@@ -80,6 +81,17 @@ CPMPlot<- function(CPM, Sample){
   return(p)
   
 }
+
+#Function that takes a column of counts and returns the number of species that pass the given list of threhsolds
+CountsPassingThreshold<- function(counts, threshold){
+  Passthreshold<-c()
+  for (i in 1:length(threshold)){
+    Passthreshold[i]<- sum(counts>threshold[i])
+    
+  }
+  return(Passthreshold)
+}
+
 ```
 
 #Read in unblocked data
@@ -190,13 +202,13 @@ unblocked_CPM<-unblocked_RemoveLow/colSums(unblocked_RemoveLow) *1000000
 unblocked_CPM<-unblocked_RemoveLow
 
 #Get total number of CPM for 3 targets-will be multiple lines, grep for targets.Sum together target CPMs
-AllTargets<-c("hsa-miR-486", "hsa-miR-92", "hsa-miR-451")
+AllTargets<-c("hsa-miR-486", "hsa-miR-92a", "hsa-miR-451a")
 
 TargetCPM_1<-lapply(AllTargets, function(x) {unblocked_CPM[grep(x, rownames(unblocked_CPM), ignore.case = TRUE),]}) #get targets
-TargetCPM_2<-lapply(TargetCPM_1, function(x) {x[!(rownames(x) %in% c("hsa-miR-4511", "hsa-miR-4510","hsa-mir-4511", "hsa-mir-4510")),]}) #remove miR-4511/4510
-TargetCPM_3<- lapply( TargetCPM_2, function(x) {colSums(x[,1:ncol(x)])}) #merge multiple species in a family into one
-TargetCPM<- as.data.frame(do.call(rbind, TargetCPM_3))
-rownames(TargetCPM)<-AllTargets
+#TargetCPM_2<-lapply(TargetCPM_1, function(x) {x[!(rownames(x) %in% c("hsa-miR-4511", "hsa-miR-4510","hsa-mir-4511", "hsa-mir-4510")),]}) #remove miR-4511/4510
+#TargetCPM_3<- lapply( TargetCPM_2, function(x) {colSums(x[,1:ncol(x)])}) #merge multiple species in a family into one
+TargetCPM<- as.data.frame(do.call(rbind, TargetCPM_1))
+#rownames(TargetCPM)<-AllTargets
 TargetCPM<- TargetCPM[,order(colnames(TargetCPM))]
 
 
@@ -271,8 +283,8 @@ write.csv(blocked_collapse, paste(writewd, "LargeCohort_RawData_blocked.csv", se
 
 #Further filtering + plotting % map to targets
 ```{r}
-#read in counts- pre-processing in above chunk
-blocked_collapse<-read.csv(paste(writewd, "LargeCohort_RawData_Unblocked.csv"), row.names = "X")
+#red in counts- pre-processing in above chunka
+blocked_collapse<-read.csv( paste(writewd, "LargeCohort_RawData_blocked.csv", sep=""), row.names = "X")
 
 #Remove any species with < 10 total counts  
 blocked_RemoveLow<- blocked_collapse[rowSums(blocked_collapse) >10,]
@@ -284,12 +296,12 @@ blocked_CPM<-blocked_RemoveLow
 
 
 #Get total number of CPM for 3 targets-will be multiple lines, grep for targets.Sum together target CPMs
-AllTargets<-c("hsa-miR-486", "hsa-miR-92", "hsa-miR-451")
+AllTargets<-c("hsa-miR-486", "hsa-miR-92a", "hsa-miR-451a")
 TargetCPM_1<-lapply(AllTargets, function(x) {blocked_CPM[grep(x, rownames(blocked_CPM), ignore.case=TRUE),]}) #get targets
-TargetCPM_2<-lapply(TargetCPM_1, function(x) {x[!(rownames(x) %in% c("hsa-miR-4511", "hsa-miR-4510","hsa-mir-4511", "hsa-mir-4510")),]}) #remove miR-4511/4510
-TargetCPM_3<- lapply( TargetCPM_2, function(x) {colSums(x[,1:ncol(x)])}) #merge multiple species in a family into one
-TargetCPM<- as.data.frame(do.call(rbind, TargetCPM_3))
-rownames(TargetCPM)<-AllTargets
+#TargetCPM_2<-lapply(TargetCPM_1, function(x) {x[!(rownames(x) %in% c("hsa-miR-4511", "hsa-miR-4510","hsa-mir-4511", "hsa-mir-4510")),]}) #remove miR-4511/4510
+#TargetCPM_3<- lapply( TargetCPM_2, function(x) {colSums(x[,1:ncol(x)])}) #merge multiple species in a family into one
+TargetCPM<- as.data.frame(do.call(rbind, TargetCPM_1))
+#rownames(TargetCPM)<-AllTargets
 TargetCPM<- TargetCPM[,order(colnames(TargetCPM))]
 
 
@@ -301,8 +313,36 @@ blocked_TargetPercentageCPM<-TargetCPM/colSums(blocked_CPM) *100
 blocked_TargetPercentageCPM["AllOthers" ,] <- 100-colSums(blocked_TargetPercentageCPM)
 ```
 
+#Plot- mapping to any target,combined- 530 and 535 total samples
+```{r}
+#sum percent mapping for the 3 targets, take mean across all samples
+blocked_all<- colSums(blocked_TargetPercentageCPM[1:3,])
+unblocked_all<- colSums(unblocked_TargetPercentageCPM[1:3,])
+df<-data.frame(Group=c("Blocked", "Unblocked"), 
+               PercentMapping=c(mean(blocked_all), mean(unblocked_all)),
+               sd=c(sd(blocked_all), sd(unblocked_all)))
 
-#Plot- 530 and 537 total samples
+#plot: 042820_LargeCohort_PercentMapping_AnyTarget_2Groups
+p<-ggplot(df, aes(y=PercentMapping, x=reorder(Group, - PercentMapping),fill=Group))+
+  geom_bar(stat="identity", position="dodge", width=.7)+ 
+  theme_classic()+
+  ylab("Percent of reads mapping to targets species")+
+  xlab("")+
+  scale_fill_manual("", values=c("Blocked"="firebrick3", "Unblocked"="turquoise3"))+
+  geom_errorbar(aes(ymin=PercentMapping-sd, ymax=PercentMapping+sd), width=.1, size=1, position=position_dodge(.9),color="black")+
+  ylim(0,100)+
+  theme(axis.text.y   = element_text(size=12, color="black", face= "bold"),
+          axis.text.x   = element_text(size=14, color="black", face="bold"),
+          axis.title.y  = element_text(size=16, color="black", face="bold"),
+          panel.border = element_rect(colour = "black", fill=NA, size=2),
+          legend.title=element_blank(),
+          legend.position = "none",
+          legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
+          axis.text.x.bottom  =element_text(size=20))
+```
+
+
+#Plot- mapping to all targets separately- 530 and 535 total samples
 ```{r}
 #Add column for blocked/unblocked to "TargetPercentageCPM" dataframes
 unblocked_TargetPercentageCPM$BlockerStatus<-rep("Unblocked", nrow(unblocked_TargetPercentageCPM))
@@ -328,7 +368,7 @@ bind_TargetPercentageCPM$BlockerStatus<-factor(bind_TargetPercentageCPM$BlockerS
 
 
 
-
+#Plot
 p<-ggplot(bind_TargetPercentageCPM, aes(x = reorder(Species, Order), y =value, fill=BlockerStatus)) +
         geom_boxplot()+
         ylab("Percent of total reads mapping")+
@@ -372,22 +412,28 @@ t.test(AllOthers[[1]]$value, AllOthers[[2]]$value) #p<2.2e-16  #means: 66.830321
 
 Filter, merge and export count matrices
 ```{r}
+#Read in pre-processed count matrices, convert to CPM
+writewd<-"C:/Users/Jenna/Documents/BlockerProject/"
+blocked_counts<-read.csv( paste(writewd, "LargeCohort_RawData_blocked.csv", sep=""), row.names = "X")
+blocked_CPM<- blocked_counts/colSums(blocked_counts)*1000000
+
+unblocked_counts<-read.csv( paste(writewd, "LargeCohort_RawData_Unblocked.csv", sep=""), row.names = "X")
+unblocked_CPM<- unblocked_counts/colSums(unblocked_counts)*1000000
+
 #Remove genes without > 1 CPM in 50% of unblocked/blocked samples- in CPM data
 blocked_CPMPass<-blocked_CPM[rowSums(blocked_CPM>1)>(ncol(blocked_CPM)/2),]
 unblocked_CPMPass<-unblocked_CPM[rowSums(unblocked_CPM>1)>(ncol(unblocked_CPM)/2),]
 
 #For the genes that passsed the CPM threshold, get raw (downsampled) counts
-blocked_CountsPass<-blocked_RemoveLow[rownames(blocked_RemoveLow) %in% rownames(blocked_CPMPass),]
-unblocked_CountsPass<-unblocked_RemoveLow[rownames(unblocked_RemoveLow) %in% rownames(unblocked_CPMPass),]
+blocked_CountsPass<-blocked_counts[rownames(blocked_counts) %in% rownames(blocked_CPMPass),]
+unblocked_CountsPass<-unblocked_counts[rownames(unblocked_counts) %in% rownames(unblocked_CPMPass),]
 
-#merge blocked and unblocked, keeping all rows
-blocked_CountsPass$geneID<- rownames(blocked_CountsPass)
-unblocked_CountsPass$geneID<-rownames(unblocked_CountsPass)
-counts<- merge(blocked_CountsPass, unblocked_CountsPass, all=TRUE,by="geneID" )
+#merge blocked and unblocked- only keep if found in both (i.e., >50% have CPM>1 in both blocked and unblocked)
+counts<- merge(blocked_CountsPass, unblocked_CountsPass, all=FALSE,by=0 )
 counts[is.na(counts)]<-0
 
 #Export
-write.csv(counts, paste(blocked_readwd, "LargeCohort_AllSamples_RawCounts_CPMFilter.csv", sep=""))
+write.csv(counts, paste(readwd, "LargeCohort_AllSamples_RawCounts_CPMFilter.csv", sep=""))
 
 #Create metadata, export
 meta_blocked<-data.frame(Samples=colnames(blocked_CPMPass), Group="Blocked")
@@ -403,7 +449,7 @@ Perform differential expression between two groups
 readwd<-"C:/Users/Jenna/Documents/BlockerProject/"
 countsInput<-read.csv(paste(readwd, "LargeCohort_AllSamples_RawCounts_CPMFilter.csv", sep="" ))
 counts<-countsInput
-rownames(counts)<-counts$geneID
+rownames(counts)<-counts$Row.names
 counts<-counts[,3:ncol(counts)]
 
 #Collapse counts-remove everything after 3rd "-" (-1, -5p, etc), then merge and sum together based on new miR IDs
@@ -423,10 +469,10 @@ dds<-DESeq(dds)
 #Extract and order results
 res<-na.omit(results(dds))
 resOrdered<-res[order(res$padj),]
-nrow(resOrdered[resOrdered$padj<0.01,]) #385
-nrow(resOrdered[resOrdered$padj<0.05,]) #392
+nrow(resOrdered[resOrdered$padj<0.01,]) #312
+nrow(resOrdered[resOrdered$padj<0.05,]) #319
 sig<-resOrdered[resOrdered$padj<0.01,]
-sig<- sig[abs(sig$log2FoldChange)>1,] #281
+sig<- sig[abs(sig$log2FoldChange)>1,] #177
 
 #Export DE results
 write.csv(resOrdered[resOrdered$padj<0.05,], paste(readwd, "LargeCohort_DESeq2Results_Collapsed_log2FC1.csv", sep=""))
@@ -478,9 +524,103 @@ CPMLog<-CPMLog[order(CPMLog$target, decreasing=TRUE),]
 
 
 p<-CPMPlot(CPMLog, "Mean")
-
-
 ```
 
+
+
+#Plot the number of species passing count thresholds for blocked and unblocked datasets
+
+```{r}
+#Read in pre-processed count matrices- only processing is collapsing isomirs together + downsampling
+writewd<-"C:/Users/Jenna/Documents/BlockerProject/"
+blocked_counts<-read.csv( paste(writewd, "LargeCohort_RawData_blocked.csv", sep=""), row.names = "X")
+unblocked_counts<-read.csv( paste(writewd, "LargeCohort_RawData_Unblocked.csv", sep=""), row.names = "X")
+
+#Collapse counts-remove everything after 3rd "-" (-1, -5p, etc), then merge and sum together based on new miR IDs
+blocked_counts$geneIDs<- sub("^([^-]*-[^-]*-[^-]*).*", "\\1", rownames(blocked_counts))
+blocked_counts$geneIDs<- gsub("mir", "miR", blocked_counts$geneIDs)
+blocked_counts_collapsed<-blocked_counts %>% group_by(geneIDs) %>% summarise_each(funs(sum)) %>% as.data.frame
+rownames(blocked_counts_collapsed)<-blocked_counts_collapsed$geneIDs
+blocked_counts_collapsed<- blocked_counts_collapsed[,2:ncol(blocked_counts_collapsed)]
+
+unblocked_counts$geneIDs<- sub("^([^-]*-[^-]*-[^-]*).*", "\\1", rownames(unblocked_counts))
+unblocked_counts$geneIDs<- gsub("mir", "miR", unblocked_counts$geneIDs)
+unblocked_counts_collapsed<-unblocked_counts %>% group_by(geneIDs) %>% summarise_each(funs(sum)) %>% as.data.frame
+rownames(unblocked_counts_collapsed)<-unblocked_counts_collapsed$geneIDs
+unblocked_counts_collapsed<- unblocked_counts_collapsed[,2:ncol(unblocked_counts_collapsed)]
+
+blockedCounts<-blocked_counts_collapsed
+unblockedCounts<-unblocked_counts_collapsed
 ```
+
+
+```{r}
+#Get raw (downsampled) counts for blocked and unblocked datasets
+#Set desired thresholds
+thresholds<-seq(0,500,50)
+NumberInEachGroup<- length(thresholds)*5 #used for plotting later
+
+#Get counts passing threshold for unblocked samples, then transform data- 4 columns: ID, threshold, #of species that passed that threshold, and blocker status
+        unblockedPassThreshold<- as.data.frame(apply(unblockedCounts, 2, 
+                                                     CountsPassingThreshold, thresholds))
+        rownames(unblockedPassThreshold)<- thresholds
+        
+        #add 4th column: mean of all samples
+        unblockedPassThreshold$Mean<- rowMeans(unblockedPassThreshold)
+        unblockedPassThreshold<- as.data.frame(t(unblockedPassThreshold))
+        unblockedPassThreshold$ID<- rownames(unblockedPassThreshold)
+        
+        #reformat- melt
+        unblockedPassThreshold<- melt(unblockedPassThreshold)
+        colnames(unblockedPassThreshold)<- c("ID", "threshold","speciesPassingThreshold")
+        unblockedPassThreshold$status<- rep("unblocked", length(thresholds) * (530+1))
+        unblockedPassThreshold$threshold<- as.integer(as.character((unblockedPassThreshold$threshold)))
+
+
+#Get counts passing threshold for blocked samples, then transform data- 4 columns: ID, threshold, #of species that passed that threshold, and blocker status
+        blockedPassThreshold<- as.data.frame(apply(blockedCounts, 2, 
+                                                     CountsPassingThreshold, thresholds))
+        rownames(blockedPassThreshold)<- thresholds
+        
+        #add 4th column: mean of all samples
+        blockedPassThreshold$Mean<- rowMeans(blockedPassThreshold)
+        blockedPassThreshold<- as.data.frame(t(blockedPassThreshold))
+        blockedPassThreshold$ID<- rownames(blockedPassThreshold)
+        
+        #reformat- melt
+        blockedPassThreshold<- melt(blockedPassThreshold)
+        colnames(blockedPassThreshold)<- c("ID", "threshold","speciesPassingThreshold")
+        blockedPassThreshold$status<- rep("blocked", length(thresholds) * (535+1))
+        blockedPassThreshold$threshold<- as.integer(as.character((blockedPassThreshold$threshold)))
+
+#combine into one
+passThreshold<-rbind(unblockedPassThreshold,blockedPassThreshold)
+passThreshold$status<-factor(passThreshold$status, levels=c("unblocked", "blocked"))
+test<-passThreshold[passThreshold$status=="unblocked",]
+
+#Plot
+p<-ggplot(passThreshold, aes(x=threshold, y=speciesPassingThreshold, color=status))+
+        geom_point(position="jitter",stat="identity",size=2,alpha=0.2)+
+        scale_color_manual(values=c("turquoise3","firebrick3"))+
+        theme_classic()+
+        scale_x_continuous(breaks=seq(0,500,50))+
+        scale_y_continuous(breaks=seq(0,600,100))+
+        xlab("Counts threshold")+
+        ylab("Number of miRs passing counts threshold")+
+        theme(axis.text.x = element_text(size=12,face="bold",color="black"),
+              axis.text.y = element_text(size=12,face="bold",color="black"),
+              axis.title.x = element_text(size=14,face="bold",color="black"),
+              axis.title.y = element_text(size=14,face="bold",color="black"),
+              legend.title=element_blank(),
+              legend.text = element_text(size=14, face="bold"),
+              legend.position=c(.9,.85),
+              legend.background = element_rect(fill=NA, size=1, 
+                                         linetype="solid", color="black"),
+              panel.border = element_rect(colour = "black", fill=NA, size=2))
+        
+
+
+means<- passThreshold[passThreshold$ID=="Mean",]
+```
+
 
