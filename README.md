@@ -1,6 +1,6 @@
 # Depletion of 3 highly expressed heme miRs from small RNA sequencing libraries using blocking oligos
 
-## Analyzing the effect of a multiplexed pool of blocking oligos on a paired-sample pilot study and a large cohort of samples
+** Analyzing the effect of a multiplexed pool of blocking oligos on a paired-sample pilot study and a large cohort of samples **
 
 This analysis is split into 4 major steps:
 
