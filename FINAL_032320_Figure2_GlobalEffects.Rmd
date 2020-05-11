@@ -19,6 +19,7 @@ suppressPackageStartupMessages(library(metaseqR))
 suppressPackageStartupMessages(library(colorRamps))
 suppressPackageStartupMessages(library(plyr))
 suppressPackageStartupMessages(library(ggrepel))
+suppressPackageStartupMessages(library(dplyr))
 windowsFonts("Arial" = windowsFont("Arial"))
 ```
 
@@ -85,7 +86,7 @@ MyPCA<- function(dds, metadata, PC1Variance, PC2Variance, Groupcolors,miny, maxy
         legend.key.size = unit(.4, "cm"),
         legend.spacing.y = unit(0, "mm"),
         legend.position = c(.9,.85),
-        panel.border = element_rect(colour = "black", fill=NA, size=2),
+        panel.border = element_rect(colour = "black", fill=NA, size=2)
         )
   return(p)
 }
@@ -147,7 +148,9 @@ PlotHeatmap<- function(OrderedResults, rld, metadata, nspecies, MinSubtract, Max
             fontsize_row = fontsize,fontsize=12,treeheight_row=0,
             border_color= NA)
   return(p)
-}CPMPlot<- function(CPM, Sample){
+}
+
+CPMPlot<- function(CPM, Sample){
   #Get subset of CPM for labeling points- points that are both sig DE and are higher in unblocked than   blocked (beneath the slope line)
   CPM$HigherInUnblocked<- (CPM$Blocker-CPM$NoBlocker)<0
   SubsetToLabel<- CPM[CPM$HigherInUnblocked=="TRUE" &CPM$Color!="Not DE",]
@@ -160,8 +163,8 @@ PlotHeatmap<- function(OrderedResults, rld, metadata, nspecies, MinSubtract, Max
   theme_classic()+
   xlim(0,6)+
   ylim(0,6)+
-  xlab(paste("Log of Unblocked Counts Per Million"))+
-  ylab(paste("Log of Blocked Counts Per Million"))+
+  xlab(paste("Log2 of Unblocked Counts Per Million"))+
+  ylab(paste("Log2 of Blocked Counts Per Million"))+
   geom_text_repel(data=SubsetToLabel, aes(x=NoBlocker, y=Blocker, label=rownames(SubsetToLabel)), color="black",  size=5, fontface="bold")+
   ggtitle(Sample)+
   theme(axis.text.y   = element_text(size=14, colour = "black", face="bold"),
@@ -182,7 +185,16 @@ PlotHeatmap<- function(OrderedResults, rld, metadata, nspecies, MinSubtract, Max
 }
 
 
-#Plot log of cpm of raw counts- coloring based on whether it's differentially expressed
+
+CollapseAandB<-function(counts){
+        counts$A.0<- rowMeans(counts[,1:3])
+        counts$B.0<- rowMeans(counts[,4:6])
+        counts$A.1<- rowMeans(counts[,9:11])
+        counts$B.1<- rowMeans(counts[,12:14])
+        counts<-counts[,c(17,18,7,8,19,20,15,16)]
+        colnames(counts)<-c("A.0", "B.0", "C.0", "D.0", "A.1", "B.1", "C.1", "D.1")
+        return(counts)
+}
 
 
 ```
@@ -198,6 +210,7 @@ PlotHeatmap<- function(OrderedResults, rld, metadata, nspecies, MinSubtract, Max
 
 #Read in data and downsample
 
+Two input data options: pilot data from CL miRDeep2 analysis or pilot data from BaseSpace miRDeep2. Basespace data used for final figure
 ```{r}
 #readwd<-"Z:/Channing_miRNA_Blocker_Test/BlockerProject/BlockerProject/RawData/"
 #countsInput<- read.csv(paste(readwd, "miRNA_CLmiRDeep2Results_AllSamples_DefaultmiRDeep2Settings.csv", sep=""))
@@ -208,13 +221,38 @@ countsInput<- countsInput[,c(1,3,5,7,9,11,13,15,2,4,6,8,10,12,14,16)]
 colnames(countsInput)<- c(paste(c("A:low", "A:medium", "A:high", "B:low", "B:medium", "B:high", "C", "D"), "-Unblocked",sep=""),
                           paste( c("A:low", "A:medium", "A:high","B:low", "B:medium", "B:high", "C", "D"), "-Blocked",sep="" ))
 
-#Downsample to common depth
-counts<- downsample.counts(countsInput, set.seed(42)) #9,989,167 lowest B.570.0
 
 #Convert values to integer
-counts<-as.data.frame(apply(counts, 2, as.integer))
+counts<-as.data.frame(apply(countsInput, 2, as.integer))
 rownames(counts)<- rownames(countsInput)
 rownames(counts)<- gsub("hsa-", "", rownames(counts))
+
+#Read in raw counts from Basespace- mature and isomir
+wd<- "C:/Users/Jenna/Documents/BlockerProject/"
+BaseSpace_countsInput<- read.delim(paste(wd, "mirna-blocker_bs_mature-isomirs_raw.txt", sep =""))
+rownames(BaseSpace_countsInput)<- BaseSpace_countsInput$ID
+BaseSpace_counts<-BaseSpace_countsInput[,c(4:ncol(BaseSpace_countsInput))]
+colnames(BaseSpace_counts)<- c(paste(c("A:low", "A:medium", "A:high", "B:low", "B:medium", "B:high", "C", "D"), "-Unblocked",sep=""),
+                          paste( c("A:low", "A:medium", "A:high","B:low", "B:medium", "B:high", "C", "D"), "-Blocked",sep="" ))
+
+        #For basespace input count matrix: merge isomir and mature
+        
+        #Collapse counts-remove everything after 3rd "-" (-1, -5p, etc), then merge and sum together based on new miR IDs
+        BaseSpace_collapsedInput<-BaseSpace_counts
+        BaseSpace_collapsedInput$geneIDs<- sub("^([^-]*-[^-]*-[^-]*).*", "\\1", rownames(BaseSpace_collapsedInput))
+        BaseSpace_collapsedInput$geneIDs<- gsub("mir", "miR", BaseSpace_collapsedInput$geneIDs)
+        
+        #Collapse isomirs and mature toegether
+        BaseSpace_collapsed<-BaseSpace_collapsedInput %>% group_by(geneIDs) %>% summarise_each(funs(sum)) %>% as.data.frame
+        rownames(BaseSpace_collapsed)<-BaseSpace_collapsed$geneIDs
+        BaseSpace_collapsed<- BaseSpace_collapsed[,2:ncol(BaseSpace_collapsed)]
+        rownames(BaseSpace_collapsed)<- gsub("hsa-", "", rownames(BaseSpace_collapsed))
+
+#Set the input matrix to be used
+countsInput<-BaseSpace_collapsed
+
+#Downsample to common depth
+counts<- downsample.counts(countsInput, set.seed(42)) #9,989,167 lowest B.570.0 /7.97 million for basespace
 ```
 
 
@@ -250,7 +288,7 @@ meta<- data.frame(sample, sampleGroup, Patient)
 #Run DESeq2- using custom function
 #Technical replicates are collapsed and pairwise analysis performed
 
-dds<- RunDESeq2(counts, meta, TRUE)
+#dds<- RunDESeq2(counts, meta, TRUE)
 ```
 
 Visualize sample differences using PCA
@@ -271,6 +309,8 @@ Repeat PCA, not collapsing technical replicates
 ```{r}
 #Run deseq2 --> plot on PCA
 p<- MyPCA_TechNotCollapsed(counts, meta, 43, 18, -20,27,-25,28) #This graph exported as 032320_Figure2A_PCA
+
+p<-p+scale_y_continuous(breaks=seq(-20,20,10))+scale_x_continuous(breaks=seq(-20,25,10))+theme(legend.position = c(.85,.2))+ylim(-20,20)
 ```
 
 
@@ -592,7 +632,8 @@ Two variations
 
 ```{r}
 #Get list of all targets
-ActualTargets<- c('miR-486-5p','miR-92a-3p','miR-451a')
+ActualTargets<- c('miR-486-5p','miR-92a-3p','miR-451a') #CL
+ActualTargets<- c('miR-486','miR-92a','miR-451a') #BS
 
 #subset counts (mature only) by non-target miRNAs
 counts_AT<- counts[!(rownames(counts) %in% ActualTargets),]
@@ -644,8 +685,8 @@ Only removed if they were at padj<0.05 in the previous analysis (actual targets 
 Select all species with 92, 451, or 486 in name. Also select 2 hsa-mir-25 species (same family as 92a)
 ```{r}
 #Entire list of all species in target family
-Target_92<- rownames(counts_AT[grep("miR-92", rownames(counts_AT))[5:8],])
-Target_451<- rownames(counts_AT[grep("miR-451", rownames(counts_AT))[11],])
+Target_92<- rownames(counts_AT[grep("miR-92", rownames(counts_AT)),])[5]
+Target_451<- rownames(counts_AT[grep("miR-451", rownames(counts_AT)),])[11]
 Target_486<- rownames(counts_AT[grep("miR-486", rownames(counts_AT)),])
 Target_25<- rownames(counts_AT[grep("miR-25", rownames(counts_AT)),])
 TargetFamilies<- c(Target_451,Target_486,Target_92, Target_25)
@@ -664,7 +705,7 @@ counts_TargetFamilies<- counts_TargetFamilies[order(counts_TargetFamilies$Unbloc
 
 #melt for plotting
 counts_TargetFamilies_melt<- melt(counts_TargetFamilies)
-counts_TargetFamilies_melt$order<- rep(1:8, 2)
+counts_TargetFamilies_melt$order<- rep(1:nrow(counts_TargetFamilies), 2)
 
 p<- ggplot(counts_TargetFamilies_melt, aes(x=reorder(species, +order), y=value, fill=variable))+
         geom_bar(position="dodge", stat="identity")+
@@ -681,7 +722,8 @@ p<- ggplot(counts_TargetFamilies_melt, aes(x=reorder(species, +order), y=value, 
                 legend.text = element_text(size=14, face="bold"),
                 axis.text.x.bottom  =element_text(size=14),
                 legend.position = c(.75,.9))
-#exported graph for supplemental figure: SupplementalFigure1_032320_TargetFamiliesCPM
+#exported graph for supplemental figure: SupplementalFigure1_032320_TargetFamiliesCPM   `       11
+
 
 
 #Remove only the one species (miR-25-3p) whose raw counts are clearly lower in blocked compared to unblocked
@@ -733,6 +775,13 @@ write.csv(resOrdered, paste(wd, "DESeq2Results/DESeq2Results_ActualTargets+Famil
 
 Remove all species that don't meet a cpm threshold: >2 cpm in at least 1 sample in each group
 ```{r}
+#Get list of all targets
+ActualTargets<- c('miR-486-5p','miR-92a-3p','miR-451a') #for CL miRDeep2
+ActualTargets<- c('miR-486','miR-92a','miR-451a') #for Basespace miRDeep2
+
+#subset counts (mature only) by non-target miRNAs
+counts_AT<- counts[!(rownames(counts) %in% ActualTargets),]
+
 #Collapse A and B technical replicates
 counts_collapsed<-counts
 counts_collapsed$A.0.c<-rowMeans(counts_collapsed[,1:3])
@@ -758,7 +807,8 @@ counts_CPMfilter<- counts[rownames(counts) %in% rownames(BlockedandUnblockedPass
 
 Also remove targets (+ 1 target family species that was decreased with blockers)
 ```{r}
-Remove<- c(ActualTargets, "miR-25-3p"  )
+Remove<- c(ActualTargets, "miR-25-3p"  ) #CL miRDeep2
+Remove<- c(ActualTargets, "miR-25"  ) #Basespace miRDeep2
 counts_CPMfilter_RemoveTargets<- counts_CPMfilter[!(rownames(counts_CPMfilter) %in% Remove),]
 ```
 
@@ -773,8 +823,8 @@ dds<- RunDESeq2(counts_CPMfilter_RemoveTargets,meta,TRUE)
 Extract DESeq2 results and visualize with heatmap
 ```{r}
 resOrdered<- GetDEResults(dds)
-#32 DE miRNAs- padj <0.05
-#22 DE miRNAs- padj <0.01
+#32 DE miRNAs- padj <0.05 / 25 DE miRNAs for BS
+#22 DE miRNAs- padj <0.01 / 18 DE miRNAs for BS
 
 #remove hsa
 rownames(resOrdered)<- gsub("hsa-", "", rownames(resOrdered))
@@ -803,11 +853,13 @@ dds<- RunDESeq2(counts_CPMfilter,meta,TRUE)
 Extract DESeq2 results and visualize with heatmap
 ```{r}
 resOrdered<- GetDEResults(dds)
-#38 DE miRNAs- padj <0.05
-#26 DE miRNAs- padj <0.01
+#38 DE miRNAs- padj <0.05 /30 DE mIRs in BS
+#26 DE miRNAs- padj <0.01 / 22 DE miRs in BS
 
 
-sig<- as.data.frame(resOrdered[resOrdered$padj<0.01,])
+sig<- as.data.frame(resOrdered[resOrdered$padj<0.01,]) #26
+#optional- set sig as being padj<0.01 + basemean >50
+sig<-as.data.frame(sig[sig$baseMean>=50,]) #doesn't remove any
 
 #normalize results
 rld<- rlog(dds)
@@ -829,9 +881,10 @@ Sig miRNAs colored in red
 CPMFinal<-as.data.frame(BlockedandUnblockedPass)
 
 #log2 of CPM
-CPMLog<- log10(CPMFinal+1) #+1 optional here
+CPMLog<- log2(CPMFinal+1) #+1 optional here
 #CPMLog<- log10(CPMFinal)
 #CPMLog<-CPMFinal
+
 
 #Get miRNA info. Need: whether or not it was targeted + whether or not it was DE
 #Add in target info- add column for whether or not the species was targeted
@@ -846,9 +899,11 @@ CPMLog$Color<- gsub(1, "DE", CPMLog$Color)
 CPMLog$Color<- gsub(0, "Not DE", CPMLog$Color)
 CPMLog<-CPMLog[order(CPMLog$target, decreasing=TRUE),]
 CPMLog[1:3, 11]<- c("Target", "Target", "Target")
-CPMLog[grep("miR-25-3p", rownames(CPMLog)),11]<- "DE"
+CPMLog[grep("miR-25-3p", rownames(CPMLog)),11]<- "DE" #CL
+CPMLog[grep("miR-25", rownames(CPMLog)),11]<- "DE" #BS
 
-
+#Export miRNAs used here for use in selecting miRs to plot for large dataset
+#write.csv(rownames(CPMLog), paste(wd, "miRNAsUsedForPilotCPMPlot_042820.csv", sep=""))
 ```
 
 
@@ -891,6 +946,16 @@ CPMLogAll$Blocker<- rowMeans(CPMLogAll[,5:8])
 CPMLogAll<- CPMLogAll[,c(11:13)]
 
 pMean<- CPMPlot(CPMLogAll, "mean across all samples")
+
+p<- pMean+ theme(axis.ticks = element_line(colour = "black", size =2), 
+                 axis.ticks.length = unit(2,"mm"))+
+        xlim(0,20)+
+        ylim(0,20)+
+        theme(axis.title.x = element_text(size=20),
+              axis.title.y = element_text(size=20))+
+        ggtitle("none")
+        
+        
 #Export as Figure2D_Log2CPMMeanAcrossSamples_032320
 ```
 

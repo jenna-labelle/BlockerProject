@@ -9,6 +9,7 @@ suppressPackageStartupMessages(library(metaseqR))
 suppressPackageStartupMessages(library(ggplot2))
 suppressPackageStartupMessages(library(reshape2))
 windowsFonts("Arial" = windowsFont("Arial"))
+suppressPackageStartupMessages(library(dplyr))
 ```
 
 Functions:
@@ -69,6 +70,7 @@ colnames(BaseSpace_counts)<- c(paste(c("A:low", "A:medium", "A:high", "B:low", "
         #For basespace input count matrix: merge isomir and mature
         
         #Collapse counts-remove everything after 3rd "-" (-1, -5p, etc), then merge and sum together based on new miR IDs
+        BaseSpace_collapsedInput<-BaseSpace_counts
         BaseSpace_collapsedInput$geneIDs<- sub("^([^-]*-[^-]*-[^-]*).*", "\\1", rownames(BaseSpace_collapsedInput))
         BaseSpace_collapsedInput$geneIDs<- gsub("mir", "miR", BaseSpace_collapsedInput$geneIDs)
         
@@ -90,7 +92,7 @@ counts<- downsample.counts(countsInput, set.seed(42)) #9,989,167 lowest B.570.0 
 #2. Figure 1A: Get proportion mapping to any target --> mean % across unblocked/blocked --> plot
 ```{r}
 #Get raw, downsampled counts for all 3 targets for al 16 samples
-MapAnyTarget<- counts[rownames(counts) %in% c("hsa-miR-92a-3p", "hsa-miR-451a", "hsa-miR-486-5p"),] #for CL
+#MapAnyTarget<- counts[rownames(counts) %in% c("hsa-miR-92a-3p", "hsa-miR-451a", "hsa-miR-486-5p"),] #for CL
 MapAnyTarget<- counts[rownames(counts) %in% c("hsa-miR-92a", "hsa-miR-451a", "hsa-miR-486"),] #for basespace collapsed
 
 #Get percentage of total for all 3 counts for all 16 samples 
@@ -167,7 +169,7 @@ p<-ggplot(Per_AnyTarget_16Samples, aes(y=PM, x=reorder(Status,+Order),group= Inp
   theme(axis.text.y   = element_text(size=12, color="black", face="bold"),
         axis.text.x   = element_blank(),
         axis.title.y  = element_text(size=14, color="black", face="bold"),
-        panel.border = element_rect(colour = "black", fill=NA, size=2), 
+        panel.border = element_rect(colour = "black", fill=NA, size=0), 
                                strip.background = element_blank(),
         legend.title=element_blank(),
         legend.text=element_text(size=12, face="bold"),
@@ -178,6 +180,29 @@ p<-ggplot(Per_AnyTarget_16Samples, aes(y=PM, x=reorder(Status,+Order),group= Inp
         size = 15, color = "black", face = "bold"
         ))
 
+#Alternative: plotting all samples on same graph, coloring based on sample
+Samplecolors<- c("goldenrod1","violetred3", "skyblue3", "darkolivegreen4")
+p<-ggplot(Per_AnyTarget_16Samples, aes(y=PM, x=reorder(Status,+Order),group= Sample,fill=Patient))+
+  geom_bar(stat="identity", position=position_dodge(width=0.8), width=.7)+ 
+  facet_wrap(~Patient, nrow=1)+     
+  theme_classic()+
+  ylab("Percent of reads mapping to target species")+
+  xlab("")+
+  scale_fill_manual("", values=c("goldenrod1","violetred3", "skyblue3", "darkolivegreen4"))+
+  ylim(0,100)+
+  theme(axis.text.y   = element_text(size=14, color="black", face="bold"),
+        axis.text.x   = element_text(size=14, color="black", face="bold", angle=45, hjust=1),
+        axis.title.y  = element_text(size=14, color="black", face="bold"),
+        #panel.border = element_rect(colour = "black", fill=NA, size=2), 
+                               strip.background = element_blank(),
+        legend.title=element_blank(),
+        legend.text=element_text(size=12, face="bold"),
+        #legend.position=c(.85,.9), 
+        legend.position=c(.12,.9),
+        #legend.position="none",
+        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
+        strip.text.x = element_blank()
+        )
 
 ```
 
@@ -201,12 +226,20 @@ B_B<- My_ANOVA(PercentMapTo3Targets[,12:14])
 #pr(>F) = 0.06 / BS: 0.07
 ```
 
+```{r}
+#Ttest for comparing 3 A to 3 A and 3B to 3 B
+ASamples<-Per_AnyTarget_16Samples[Per_AnyTarget_16Samples$Patient=="Sample A",]
+BSamples<-Per_AnyTarget_16Samples[Per_AnyTarget_16Samples$Patient=="Sample B",]
+
+t.test(ASamples[ASamples$Status=="Unblocked",2],ASamples[ASamples$Status=="Blocked",2],) #p=1.27e-05
+t.test(BSamples[BSamples$Status=="Unblocked",2],BSamples[BSamples$Status=="Blocked",2],) #p=0.003
+```
 
 #5. Figure 1C: Graph % for mapping to 3 targets individually for 4 unblocked vs 4 blocked
 
 
 ```{r}
-#Create new counts dataframe: A and B replicates collapsed by taking mean. Then downsample.
+#Create new counts dataframe: A and B replicates collapsed by taking mean.
 CollapsedCounts<-countsInput
 CollapsedCounts$A_Unblocked <- rowMeans(CollapsedCounts[,1:3])
 CollapsedCounts$A_Blocked <- rowMeans(CollapsedCounts[,9:11])
@@ -249,7 +282,7 @@ p<-ggplot(PM_melt, aes(y=value, x=ID, fill=Status))+
         ylab("Percent of reads mapping to target species")+
         xlab("")+
         scale_fill_manual("", values=c("A:UnBlocked"="turquoise3","Blocked"="firebrick3"),labels=c("Unblocked", "Blocked"))+
-        ylim(0,100)+
+        ylim(0,40)+
         theme(axis.text.y   = element_text(size=12, colour = "black", face="bold"),
                 axis.title.y  = element_text(size=14, face="bold", color="black"),
                 axis.text.x  = element_text(size=14, face="bold"),
@@ -262,7 +295,7 @@ p<-ggplot(PM_melt, aes(y=value, x=ID, fill=Status))+
                 legend.key.size = unit(.4, "cm"),
                 legend.spacing.y = unit(0, "mm"),
                 legend.text=element_text(size=12, face="bold", color= "black"),
-                strip.text = element_text(size= 15,face="bold")
+                strip.text = element_text(size= 8,face="bold")
               )
 
 

@@ -9,6 +9,7 @@ suppressPackageStartupMessages(library(metaseqR))
 suppressPackageStartupMessages(library(DESeq2))
 suppressPackageStartupMessages(library(ggplot2))
 suppressPackageStartupMessages(library(ggrepel))
+suppressPackageStartupMessages(library(dplyr))
 ```
 
 
@@ -55,6 +56,7 @@ GetDEResults<- function(dds){
 
 #Read in data and downsample
 
+Two input data options: pilot data from CL miRDeep2 analysis or pilot data from BaseSpace miRDeep2. Basespace data used for final figure
 ```{r}
 #readwd<-"Z:/Channing_miRNA_Blocker_Test/BlockerProject/BlockerProject/RawData/"
 #countsInput<- read.csv(paste(readwd, "miRNA_CLmiRDeep2Results_AllSamples_DefaultmiRDeep2Settings.csv", sep=""))
@@ -65,12 +67,37 @@ countsInput<- countsInput[,c(1,3,5,7,9,11,13,15,2,4,6,8,10,12,14,16)]
 colnames(countsInput)<- c(paste(c("A:low", "A:medium", "A:high", "B:low", "B:medium", "B:high", "C", "D"), "-Unblocked",sep=""),
                           paste( c("A:low", "A:medium", "A:high","B:low", "B:medium", "B:high", "C", "D"), "-Blocked",sep="" ))
 
-#Downsample to common depth
-counts<- downsample.counts(countsInput, set.seed(42)) #9,989,167 lowest B.570.0
 
 #Convert values to integer
-counts<-as.data.frame(apply(counts, 2, as.integer))
+counts<-as.data.frame(apply(countsInput, 2, as.integer))
 rownames(counts)<- rownames(countsInput)
+
+#Read in raw counts from Basespace- mature and isomir
+wd<- "C:/Users/Jenna/Documents/BlockerProject/"
+BaseSpace_countsInput<- read.delim(paste(wd, "mirna-blocker_bs_mature-isomirs_raw.txt", sep =""))
+rownames(BaseSpace_countsInput)<- BaseSpace_countsInput$ID
+BaseSpace_counts<-BaseSpace_countsInput[,c(4:ncol(BaseSpace_countsInput))]
+colnames(BaseSpace_counts)<- c(paste(c("A:low", "A:medium", "A:high", "B:low", "B:medium", "B:high", "C", "D"), "-Unblocked",sep=""),
+                          paste( c("A:low", "A:medium", "A:high","B:low", "B:medium", "B:high", "C", "D"), "-Blocked",sep="" ))
+
+        #For basespace input count matrix: merge isomir and mature
+        
+        #Collapse counts-remove everything after 3rd "-" (-1, -5p, etc), then merge and sum together based on new miR IDs
+        BaseSpace_collapsedInput<-BaseSpace_counts
+        BaseSpace_collapsedInput$geneIDs<- sub("^([^-]*-[^-]*-[^-]*).*", "\\1", rownames(BaseSpace_collapsedInput))
+        BaseSpace_collapsedInput$geneIDs<- gsub("mir", "miR", BaseSpace_collapsedInput$geneIDs)
+        
+        #Collapse isomirs and mature toegether
+        BaseSpace_collapsed<-BaseSpace_collapsedInput %>% group_by(geneIDs) %>% summarise_each(funs(sum)) %>% as.data.frame
+        rownames(BaseSpace_collapsed)<-BaseSpace_collapsed$geneIDs
+        BaseSpace_collapsed<- BaseSpace_collapsed[,2:ncol(BaseSpace_collapsed)]
+        rownames(BaseSpace_collapsed)<- gsub("hsa-", "", rownames(BaseSpace_collapsed))
+
+#Set the input matrix to be used
+countsInput<-BaseSpace_collapsed
+
+#Downsample to common depth
+counts<- downsample.counts(countsInput, set.seed(42)) #9,989,167 lowest B.570.0 /7.97 million for basespace
 ```
 
 Reformat, create metadata
@@ -136,8 +163,8 @@ dds<- RunDESeq2(counts_CPMfilter,meta,TRUE)
 Extract DESeq2 results 
 ```{r}
 resOrdered<- GetDEResults(dds)
-#38 DE miRNAs- padj <0.05
-#26 DE miRNAs- padj <0.01
+#38 DE miRNAs- padj <0.05 / 30 BS
+#26 DE miRNAs- padj <0.01 /22 BS
 
 sig<- as.data.frame(resOrdered[resOrdered$padj<0.05,])
 sig<- sig[,c(1,2,6)]
@@ -150,21 +177,28 @@ Unblocked_RawCounts<- as.data.frame(rowMeans(counts_cpm[rownames(counts_cpm) %in
 Blocked_RawCounts<- as.data.frame(rowMeans(counts_cpm[rownames(counts_cpm) %in% rownames(sig),5:8]))
 OT<- merge(sig, Unblocked_RawCounts, by=0)
 rownames(OT)<-OT$Row.names
-colnames(OT)<- c("Species", "baseMean", "log2FoldChange", "padj", "MeanRawUnblockedCounts")
+colnames(OT)<- c("Species", "baseMean", "log2FoldChange", "padj", "MeanCPMUnblockedCounts")
 OT<- merge(OT, Blocked_RawCounts, by=0)
 OT<-OT[,-1]
-colnames(OT)<- c("Species", "baseMean", "log2FoldChange", "padj", "MeanRawUnblockedCounts", "MeanRawBlockedCounts")
+colnames(OT)<- c("Species", "baseMean", "log2FoldChange", "padj", "MeanCPMUnblockedCounts", "MeanCPMBlockedCounts")
 OT$MeanRawCounts<- rowMeans(OT[,5:6])
 
 #Annotate by whether species is a target miR
-ActualTargets<- c('miR-486-5p','miR-92a-3p','miR-451a')
+ActualTargets<- c('miR-486-5p','miR-92a-3p','miR-451a') #CL
+ActualTargets<- c('miR-486','miR-92a','miR-451a') #BS
 OT$Target<- OT$Species %in% ActualTargets
 
 #Entire list of all species in target family
-Target_92<- rownames(counts[grep("miR-92", rownames(counts))[5:8],])
-Target_451<- rownames(counts[grep("miR-451", rownames(counts))[11],])
-Target_486<- rownames(counts[grep("miR-486", rownames(counts)),])
-Target_25<- rownames(counts[grep("miR-25", rownames(counts)),])
+Target_92<- rownames(counts[grep("miR-92", rownames(counts))[5:8],]) #CL
+Target_92<- rownames(counts[grep("miR-92", rownames(counts))[5:6],]) #BS
+
+Target_451<- rownames(counts[grep("miR-451", rownames(counts))[11],]) #CL
+Target_451<- rownames(counts[grep("miR-451", rownames(counts))[11:12],]) #BS
+
+Target_486<- rownames(counts[grep("miR-486", rownames(counts)),]) #CL or BS
+
+Target_25<- rownames(counts[grep("miR-25", rownames(counts)),]) #CL or BS
+
 TargetFamilies<- c(Target_451,Target_486,Target_92, Target_25)
 OT$TargetFamily<- OT$Species %in% TargetFamilies
 OT$Color<- as.factor(rowSums(OT[,c(8,9)]))
@@ -179,7 +213,7 @@ SubsetToLabel$Species<- gsub("hsa-", "", SubsetToLabel$Species)
 ```
 
 ```{r}
-write.csv(OT, paste(wd,"OffTargetStats_042020.csv", sep=""))
+write.csv(OT, paste(wd,"OffTargetStats_BaseSpacePilot.csv", sep=""))
 ```
 
 ```{r}
@@ -187,7 +221,7 @@ write.csv(OT, paste(wd,"OffTargetStats_042020.csv", sep=""))
 p<-ggplot(OT,aes(x=log2FoldChange, y= padj, fill=Color))+
   geom_point(aes(size=MeanRawCounts), pch=21, color="black")+
   scale_size_continuous(range = c(1, 50), guide=FALSE)+
-  scale_x_continuous(limits = c(-6, 7))+
+  scale_x_continuous(limits=c(-6,6),n.breaks = 7)+
   scale_y_continuous(limits = c(-0.008, .05))+
   theme_classic()+
   xlab("log2 foldchange of differential expression")+
@@ -215,41 +249,7 @@ p<-ggplot(OT,aes(x=log2FoldChange, y= padj, fill=Color))+
 
 p
 
-#legend
-dummy<-data.frame(MeanRawCounts=c(10,100,1000,10000,100000,300000), Species=c("a", "b", "c", "d", "e", "f"),
-                  padj=seq(1,6,1), log2FoldChange=seq(1,6,1))
 
-
-#plot
-p<-ggplot(dummy,aes(x=log2FoldChange, y= padj))+
-  geom_point(aes(size=MeanRawCounts), pch=21, color="black")+
-  scale_size_continuous(range = c(1, 50))
-  
-
-  xlab("log2 foldchange of differential expression")+
-  ylab("Adjusted p value")+
-  geom_vline(xintercept=0,linetype="dotted", color= "black", size=1.25)+
-  guides(colour = guide_legend(override.aes = list(size=5)))+
-  geom_text_repel(data=SubsetToLabel, aes(x=log2FoldChange, y=padj, 
-                                          label=Species),
-                                          size=3.5, fontface= "bold",
-                                          nudge_y = 0.0035, point.padding = 1.7, 
-                                          box.padding = 0.5)+
-  scale_fill_manual(values=c("orange","black", "red"))+
-  theme(axis.text.y   = element_text(size=12, face= "bold", colour = "black"),
-        axis.title.y  = element_text(size=16, face= "bold", colour = "black"),
-        axis.title.x  = element_text(size=16, face="bold", colour = "black"),
-        axis.text.x  = element_text(size=12, face="bold", colour = "black"),
-        legend.background = element_rect(fill=NA, size=1, 
-                                         linetype="solid", color="black"),
-        legend.title=element_blank(),
-        legend.key.size = unit(.4, "cm"),
-        legend.spacing.y = unit(0, "mm"),
-        legend.position = c(.8,.93),
-        panel.border = element_rect(colour = "black", fill=NA, size=2),
-        legend.text = element_text(size=13, face="bold"))
-
-p
 
 ```
 
@@ -278,7 +278,6 @@ DZ_melt$Status<-str_sub(DZ_melt$variable, start=-1)
 p<-ggplot(DZ_melt, aes(x=Species, y=value, fill=Status))+
         geom_bar(position="dodge", stat="identity")
 ```
-
 
 
 
