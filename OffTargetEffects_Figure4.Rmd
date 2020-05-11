@@ -261,4 +261,7 @@ p<-ggplot(OT,aes(x=log2FoldChange, y= padj, fill=Color))+
 p
 ```
 
+```{r}
+sessionInfo()
+```
 

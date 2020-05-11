@@ -662,3 +662,9 @@ Putting A-D together on one plot:
 ```{r}
 grid.arrange(pA, pB, pC, pD, nrow=2)
 ```
+
+
+```{r}
+sessionInfo()
+```
+
