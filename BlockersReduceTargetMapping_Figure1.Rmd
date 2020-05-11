@@ -55,7 +55,10 @@ My_ANOVA<- function(PM){
 5. Graph % for mapping to 3 targets (or 11 targets if Basespace isomirs/mature are separated) individually for 4 unblocked vs 4 blocked
 
 
-#1. read in raw counts and downsample
+
+#1: Read in data and downsample
+
+Two input data options: pilot data from CL miRDeep2 analysis or pilot data from BaseSpace miRDeep2. Basespace data used for final figure
 ```{r}
 #Read in raw couns from default CL miRDeep2 
 countsInput<- read.csv("C:/Users/Jenna/Documents/BlockerProject/miRNA_CLmiRDeep2Results_AllSamples_DefaultmiRDeep2Settings.csv")
