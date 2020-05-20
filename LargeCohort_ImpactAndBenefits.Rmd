@@ -452,8 +452,69 @@ bind_TargetPercentageCPM<- rbind(df_unblocked_melt, df_blocked_melt)
 bind_TargetPercentageCPM$Order<- rep(seq(1,length(unique(bind_TargetPercentageCPM$Species)),1),
                                      nrow(bind_TargetPercentageCPM)/length(unique(bind_TargetPercentageCPM$Species)))
 bind_TargetPercentageCPM$BlockerStatus<-factor(bind_TargetPercentageCPM$BlockerStatus, levels=c("Unblocked", "Blocked"))
+```
 
 
+#Collapsing technical replicates: some samples occur multiple times in blocked/unblocked sets. Collapse into one by taking the average.
+```{r}
+#Remove control samples from counts table- only keeping samples named as "S."
+bind_TargetPercentageCPM<-bind_TargetPercentageCPM[grepl("S.", bind_TargetPercentageCPM$variable),]
+
+#Rename samples in counts- remove the Trimmed, -x -y, etc
+bind_TargetPercentageCPM$variable<-gsub("Trimmed.x", "", bind_TargetPercentageCPM$variable)
+bind_TargetPercentageCPM$variable<-gsub("Trimmed.y", "", bind_TargetPercentageCPM$variable)
+bind_TargetPercentageCPM$variable<-gsub("Trimmed", "", bind_TargetPercentageCPM$variable)
+bind_TargetPercentageCPM$variable<-gsub("trimmed.x", "", bind_TargetPercentageCPM$variable)
+bind_TargetPercentageCPM$variable<-gsub("trimmed.y", "", bind_TargetPercentageCPM$variable)
+bind_TargetPercentageCPM$variable<-gsub("trimmed", "", bind_TargetPercentageCPM$variable)
+
+#Add new column- new sampleID (sampleID_Blocked/Unblocked_Species)
+bind_TargetPercentageCPM$NewSampleID<- paste(bind_TargetPercentageCPM$variable, bind_TargetPercentageCPM$BlockerStatus, bind_TargetPercentageCPM$Species, sep="_")
+
+#Collapse the same sample IDs together
+sampleIDsCollapsed_bind_TargetPercentageCPM<- bind_TargetPercentageCPM %>% select(c(value, NewSampleID)) %>% group_by(NewSampleID) %>% dplyr::summarize(value = mean(value, na.rm=TRUE)) %>% as.data.frame()
+
+#Split back out into separate columns
+sampleIDsCollapsed_bind_TargetPercentageCPM<- separate(data = sampleIDsCollapsed_bind_TargetPercentageCPM, col = NewSampleID, into = c("Sample", "BlockerStatus", "Species"), sep = "_")
+
+#Add order column for plotting
+sampleIDsCollapsed_bind_TargetPercentageCPM$Order<- rep(c(12,6,5,3,4,1,2,9,10,11,8,7))
+
+#rename for using same plotting chunk
+bind_TargetPercentageCPM<-sampleIDsCollapsed_bind_TargetPercentageCPM
+```
+
+
+Get significance values for comparing blocked/unblocked in each species
+```{r}
+#Run t.test for all species
+SplitDFBymiR<-split(bind_TargetPercentageCPM, bind_TargetPercentageCPM$Species)
+Ttest<- unlist(lapply(SplitDFBymiR, function(x) {t.test(x[x$BlockerStatus=="Unblocked",4],x[x$BlockerStatus=="Blocked", 4])$p.value}))
+```
+
+#Optional: get only paired samples --> paired analysis
+Use tech reps collapsed as starting point
+```{r}
+#Read in paired samples
+pairedSamples<-read.csv(paste(wd, "Paired_LargeCohortSamples_BlockedUnblocked.csv", sep=""))
+
+#Add column for Subject_Species
+pairedSamples$SubjectSpecies<- paste(pairedSamples$Subject, pairedSamples$Species, sep="")
+
+test<-pairedSamples %>% group_by(SubjectSpecies) %>% mutate(minus=Blocked_value-Unblocked_value)  %>%as.data.frame()
+
+test2<-test %>% group_by(Species) %>% summarize(value=mean(minus))%>%as.data.frame
+
+p<-ggplot(test2, aes(x=Species, y=value))+
+        geom_bar(stat="identity", position="dodge")+
+        theme(axis.text.x=element_text(angle=45, hjust=1))
+
+p<-ggplot(test, aes(x=Species, y= minus))+
+        geom_boxplot()
+```
+
+
+```{r}
 #Plot
 p<-ggplot(bind_TargetPercentageCPM, aes(x = reorder(Species, Order), y =value, fill=BlockerStatus)) +
         geom_boxplot(size=0.3,color="black",outlier.size = .7)+
@@ -472,7 +533,6 @@ p<-ggplot(bind_TargetPercentageCPM, aes(x = reorder(Species, Order), y =value, f
               legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
               axis.ticks = element_line(size = 1.5,color="black"),
               axis.ticks.length=unit(.2, "cm"))
-
 ```
 
 Get significance values for comparing blocked/unblocked in each species
