@@ -19,6 +19,7 @@ suppressPackageStartupMessages(library(DESeq2))
 suppressPackageStartupMessages(library(pheatmap))
 suppressPackageStartupMessages(library(ggrepel))
 suppressPackageStartupMessages(library(ggpubr))
+suppressPackageStartupMessages(library(gsubfn))
 windowsFonts("Arial" = windowsFont("Arial"))
 ```
 
@@ -93,8 +94,7 @@ RunDESeq2<- function(counts,meta) {
 
 #Overall steps:
 
-1. Read in unblocked data-from multiple folders- and merge into 1. Filter based on read count. Write file out for later use, as this step is computationally intensive.
-2. Read in blocked data-from multiple folders- and merge into 1. Filter based on read count. Write file out for later use, as this step is computationally intensive.
+
 3. Read in filtered/merged unblocked data from step 1 --> Further filtering + plotting % map to targets
 4. Read in filtered/merged blocked data from step 2 --> Further filtering + plotting % map to targets
 5. For blocked  and unblocked  data, plot the % mapping to any target (Supplemental Figure 1B)
@@ -106,251 +106,6 @@ RunDESeq2<- function(counts,meta) {
 11. Plotting off target effects (only used in Supplemental table 1)
 
 
-
-#1: Read in unblocked data-from multiple folders- and merge into 1
-```{r}
-unblocked_readwd<-"Z:/Small_RNA/BaseSpace/"
-
-#Get filenames needed
-filenames1<-c("Hersh_PT8_Rerun_Small_RNA_11072017_counts",
-             "Hersh-miRNA-PT9Reruns_Small_RNA_12182017_counts")
-
-filenames2<-c("9256704449-2_Small_RNA_05252017_counts",
-             "9416449660-3_Small_RNA_06282017_counts",
-             "9597590455-6_Small_RNA_06292017_counts",
-             "9959254099-1_Small_RNA_10062017_counts",
-             "10272166057-5_Small_RNA_08212017_counts",
-             "10284133418-9_Small_RNA_08212017_counts")
-
-filenames3<- c("AERD_miRNA_Sequencing_Small_RNA_10062017_counts",
-               "Kelan_Viva_miRNA_Small_RNA_09272017_counts"
-        
-)
-
-filenames4<-c("Hersh_PT8_Rerun_Small_RNA_11072017_counts",
-             "Hersh-miRNA-PT9Reruns_Small_RNA_12182017_counts",
-             "9256704449-2_Small_RNA_05252017_counts",
-             "9416449660-3_Small_RNA_06282017_counts",
-             "9597590455-6_Small_RNA_06292017_counts",
-             "10272166057-5_Small_RNA_08212017_counts",
-             "10284133418-9_Small_RNA_08212017_counts"
-            )
-
-filenames<-filenames4
-#Read in files
-unblocked_input<-list()
-for (i in 1:length(filenames)){
-        df<-read.csv(paste(unblocked_readwd, filenames[i], ".csv", sep=""), stringsAsFactors = FALSE)
-        df<-df[-1,]
-        unblocked_input[[i]]<-df
-}
-
-
-```
-
-
-Merge into one dataset, filter based on total reads per sample and per miRNA
-```{r}
-#Merge into one dataset
-unblocked_all_input<- unblocked_input %>% purrr::reduce(full_join, by = "X")
-
-#Convert to integer, remove NA
-Rownames<-unblocked_all_input$X
-rownames(unblocked_all_input)<-Rownames
-unblocked_all<-unblocked_all_input[,-1]
-unblocked_all<- as.data.frame(apply(unblocked_all, 2, as.integer))
-rownames(unblocked_all)<-Rownames
-unblocked_all<-na.omit(unblocked_all)
-
-#Remove any samples with fewer than 2million total reads
-unblocked_RemoveSample<- unblocked_all[,colSums(unblocked_all)>2000000]
-
-#Downsample to common depth
-unblocked_DS<- downsample.counts(unblocked_RemoveSample, set.seed(42)) 
-#unblocked_DS$X<-Rownames
-unblocked_DS$X<-rownames(unblocked_DS)
-
-#sort and remove sequences from rownames, and convert to integer
-unblocked_sort<-  unblocked_DS[order(unblocked_DS[,1], decreasing = TRUE),]
-unblocked_sort$X<-rownames(unblocked_sort) 
-unblocked_sort$X<- gsub(".*_", "", unblocked_sort$X)
-
-#Collapse counts- multiple entries for a single species are collapsed into one
-unblocked_collapse<- unblocked_sort %>% as.tibble() %>% group_by(X) %>% summarise_all(funs(if(is.numeric(.)) sum(.) else "Total")) %>% as.data.frame
-rownames(unblocked_collapse)<-unblocked_collapse$X
-unblocked_collapse<-unblocked_collapse[,-1]
-
-#write to file for later use
-writewd<-"C:/Users/Jenna/Documents/BlockerProject/"
-write.csv(unblocked_collapse, paste(writewd, "LargeCohort_RawData_Unblocked.csv", sep=""))
-```
-
-#2: Read in blocked data-from multiple folders- and merge into 1. Filter based on read count. Write file out for later use, as this step is computationally intensive.
-```{r}
-blocked_readwd<-"Z:/COPD/miRNAseq/BaseSpace/"
-
-#Get filenames needed
-filenames<-c("21801069331-0_GECOPD_miRNASeq _Small_RNA_11222019_counts",
-             "21801069331-0_GECOPD_miRNASeq _Small_RNA_12032019_counts",
-             "21801069331-0_GECOPD_miRNASeq _Small_RNA_12042019_counts",
-             "21801069331-0_GECOPD_miRNASeq _Small_RNA_12102019_counts",
-             "21801069331-0_GECOPD_miRNASeq _Small_RNA_12112019_counts",
-             "24200081892-6_GECOPD_P6_miRNASeq _Small_RNA_03092020_counts")
-
-#Read in files
-blocked_input<-list()
-for (i in 1:length(filenames)){
-        df<-read.csv(paste(blocked_readwd, filenames[i], ".csv", sep=""), stringsAsFactors = FALSE)
-        df<-df[-1,]
-        blocked_input[[i]]<-df
-}
-
-```
-
-#Merge into one dataset, filter based on total reads per sample and per miRNA
-```{r}
-#Merge into one dataset
-blocked_all_input<- blocked_input %>% purrr::reduce(full_join, by = "X")
-
-#Convert to integer, remove NA
-Rownames<-blocked_all_input$X
-rownames(blocked_all_input)<-Rownames
-blocked_all<-blocked_all_input[,-1]
-blocked_all<- as.data.frame(apply(blocked_all, 2, as.integer))
-rownames(blocked_all)<-Rownames
-blocked_all<-na.omit(blocked_all)
-
-
-#Remove any samples with fewer than 2million total reads
-blocked_RemoveSample<- blocked_all[,colSums(blocked_all)>2000000]
-
-#Downsample to common depth
-blocked_DS<- downsample.counts(blocked_RemoveSample, set.seed(42)) 
-#blocked_DS$X<-Rownames
-blocked_DS$X<-rownames(blocked_DS)
-
-#sort and remove sequences from rownames, and convert to integer
-blocked_sort<-  blocked_DS[order(blocked_DS[,1], decreasing = TRUE),]
-blocked_sort$X<-rownames(blocked_sort)
-blocked_sort$X<- gsub(".*_", "", blocked_sort$X)
-
-
-#Collapse counts- multiple entries for a single species are collapsed into one
-blocked_collapse<- blocked_sort %>% as.tibble() %>% group_by(X) %>% summarise_all(funs(if(is.numeric(.)) sum(.) else "Total")) %>% as.data.frame
-rownames(blocked_collapse)<-blocked_collapse$X
-blocked_collapse<-blocked_collapse[,-1]
-
-#write to csv for later use
-write.csv(blocked_collapse, paste(writewd, "LargeCohort_RawData_blocked.csv", sep=""))
-```
-
-
-#3: Read in filtered/merged unblocked data from step 1 --> Collapse technical replicates --> Write out for later use
-```{r}
-#read in counts- pre-processing in above chunk
-writewd<-"C:/Users/Jenna/Documents/BlockerProject/"
-unblocked_collapse<-read.csv(paste(writewd, "LargeCohort_RawData_Unblocked.csv"), row.names = "X")
-
-#Remove any species with < 10 total counts-optional
-unblocked_RemoveLow<- unblocked_collapse[rowSums(unblocked_collapse) >10,]
-unblocked_RemoveLow<-unblocked_collapse
-
-```
-
-
-#Collapse technical replicates- this dataset used as raw counts for rest of analysis
-```{r}
-#temporarily transpose data
-trans<-as.data.frame(t(unblocked_RemoveLow))
-trans$sample<-rownames(trans)
-
-#Remove control samples from counts table- only keeping samples named as "S."
-trans<-trans[grepl("S.",trans$sample),] #removes 2 controls
-
-#remove suffixes from sample names
-trans$sample<- gsub(paste0(c(".x", ".y", "Trimmed.x", "Trimmed.y", "Trimmed", "trimmed.x", "trimmed.y", "trimmed"), collapse="|"),"", trans$sample)
-
-#Collapse the same sample IDs together
-sampleIDsCollapsed_trans<- trans %>% group_by(sample) %>% dplyr::summarize_each(funs(mean)) %>% as.data.frame()
-
-#transpose data again
-unblocked_Ccounts<-data.frame(t(sampleIDsCollapsed_trans))
-colnames(unblocked_Ccounts)<-unlist(as.list(apply(unblocked_Ccounts[1,],1, as.character)))
-unblocked_Ccounts<-unblocked_Ccounts[-1,]
-
-#Convert to integer
-integer_counts<-as.data.frame(apply(unblocked_Ccounts, 2, as.integer))
-rownames(integer_counts)<-rownames(unblocked_Ccounts)
-
-#write to csv
-write.csv(integer_counts,paste(wd, "UnblockedRawCounts_TechCollapsed.csv",sep=""))
-```
-
-#4:  Read in filtered/merged blocked data from step 1 --> Collapse technical replicates --> Write out for later use
-```{r}
-#red in counts- pre-processing in above chunka
-blocked_collapse<-read.csv( paste(writewd, "LargeCohort_RawData_blocked.csv", sep=""), row.names = "X")
-
-#Remove any species with < 10 total counts  
-blocked_RemoveLow<- blocked_collapse[rowSums(blocked_collapse) >10,]
-blocked_RemoveLow<-blocked_collapse
-```
-
-#Collapse technical replicates- this dataset used as raw counts for rest of analysis
-```{r}
-#temporarily transpose data
-trans<-as.data.frame(t(blocked_RemoveLow))
-trans$sample<-rownames(trans)
-
-#Remove control samples from counts table- only keeping samples named as "S."
-trans<-trans[grepl("S.",trans$sample),] #removes 2 controls
-
-#remove suffixes from sample names
-trans$sample<- gsub(paste0(c(".x", ".y","Trimmed.x", "Trimmed.y", "Trimmed", "trimmed.x", "trimmed.y", "trimmed"), collapse="|"),"", trans$sample)
-
-#Collapse the same sample IDs together
-sampleIDsCollapsed_trans<- trans %>% group_by(sample) %>% dplyr::summarize_each(funs(mean)) %>% as.data.frame()
-
-#transpose data again
-blocked_Ccounts<-data.frame(t(sampleIDsCollapsed_trans))
-colnames(blocked_Ccounts)<-unlist(as.list(apply(blocked_Ccounts[1,],1, as.character)))
-blocked_Ccounts<-blocked_Ccounts[-1,]
-
-#Convert to integer
-integer_counts<-as.data.frame(apply(blocked_Ccounts, 2, as.integer))
-rownames(integer_counts)<-rownames(blocked_Ccounts)
-
-#write to csv
-write.csv(integer_counts,paste(wd, "BlockedRawCounts_TechCollapsed.csv",sep=""))
-```
-
-
-#5: Optional: get only samples that are in a blocked/unblocked pair (from same subject)
-Use tech reps collapsed as starting point
-```{r}
-#Read in paired samples- From BH. Add column for new sampleID- "sampleIDppm_Blocked/Unblocked". Needed since some sample IDs are replicated between blocked/unblocked
-pairedSamples<-read.csv(paste(wd, "PairedSamples_LargeCohort_FromBH.csv", sep=""), stringsAsFactors = FALSE)
-pairedSamples$NewSampleID<- paste(gsub("-", ".",pairedSamples$sampIdPpm), 
-                                  gsubfn(".", list("0" = "Unblocked", "1" = "Blocked"), as.character(pairedSamples$blocker)),sep="_")
-
-#Read in unblocked raw counts, tech collapsed (generated above) --> change column names like New sample ID above
-unblocked_Counts<- read.csv(paste(wd, "UnblockedRawCounts_TechCollapsed.csv",sep=""))
-colnames(unblocked_Counts)<-paste(colnames(unblocked_Counts), "Unblocked", sep="_")
-
-#Read in blocked raw counts, tech collapsed (generated above) --> change column names like New sample ID above
-blocked_Counts<- read.csv(paste(wd, "BlockedRawCounts_TechCollapsed.csv",sep=""))
-colnames(blocked_Counts)<-paste(colnames(blocked_Counts), "Blocked", sep="_")
-
-#Subset raw counts to paired samples -89 total pairs
-paired_unblocked<-unblocked_Counts[,colnames(unblocked_Counts) %in% pairedSamples$NewSampleID]
-rownames(paired_unblocked)<- unblocked_Counts$X_Unblocked
-paired_blocked<-blocked_Counts[,colnames(blocked_Counts) %in% pairedSamples$NewSampleID]
-rownames(paired_blocked)<- blocked_Counts$X_Blocked
-
-#write to csv- can use this or the unpaired data set for the rest of this analysis
-write.csv(paired_unblocked, paste(wd, "LargeCohort_PairedSubset_89Samples_Unblocked.csv", sep=""))
-write.csv(paired_blocked, paste(wd, "LargeCohort_PairedSubset_89Samples_Blocked.csv", sep=""))
-```
 
 
 
@@ -381,7 +136,6 @@ unblocked_TargetPercentageCPM<-TargetCPM/colSums(unblocked_CPM) *100
 #add row with percent mapping to non-target
 unblocked_TargetPercentageCPM["AllOthers" ,] <- 100-colSums(unblocked_TargetPercentageCPM)
 ```
-
 
 
 
@@ -616,7 +370,7 @@ GetMeans<- GetMeans %>% group_by(Grouping)  %>% mutate(mean=mean(value)) %>% as.
 GetMeans[!duplicated(GetMeans$mean),]
 ```
 
-#8: Differential expression- unpaired, DESeq2. Used for coloring sig points in Log2 CPM plot 
+#11: Differential expression- unpaired, DESeq2. Used for coloring sig points in Log2 CPM plot 
 
 Filter, merge and export count matrices
 ```{r}
@@ -649,6 +403,13 @@ meta<-rbind(meta_blocked,meta_unblocked)
 write.csv(meta, paste(wd, "LargeCohort_TechCollapsed_Metadata.csv", sep=""))
 ```
 
+```{r}
+
+targets<-c("hsa-miR-486" , "hsa-miR-92a" , "hsa-miR-92b" , "hsa-miR-451a", "hsa-miR-25")
+counts_TR<-counts_CPMPass[!(rownames(counts_CPMPass) %in% targets),]
+dds<-DESeqDataSetFromMatrix(counts_TR, pairedSamples, design=~blocker)
+DESeq2::plotPCA(varianceStabilizingTransformation(dds), intgroup="blocker")
+```
 
 Perform differential expression between two groups
 ```{r}
@@ -682,7 +443,7 @@ sig<-resOrdered[resOrdered$padj<0.01,]
 sig<- sig[abs(sig$log2FoldChange)>1,] #89
 ```
 
-#9: Plot log2 CPM values for blocked and unblocked datasets, coloring based on sig (from previous step) (Figure 2E)
+#12: Plot log2 CPM values for blocked and unblocked datasets, coloring based on sig (from previous step) (Figure 2E)
 ```{r}
 #Convert to CPM
 CPM<- counts_collapsed/colSums(counts_collapsed) *1000000
@@ -725,7 +486,7 @@ p<-CPMPlot(CPMLog, "Mean")+
               axis.title.y = element_text(size=20))
 ```
 
-#10: Differential expression for paired cohort samples. Pair-wise DESeq2 used. Metadata includes sample information from BH.
+#13: Differential expression for paired cohort samples. Pair-wise DESeq2 used. Metadata includes sample information from BH.
 ```{r}
 #read in paired data, blocked and unblocked
 unblocked_paired<-read.csv(paste(wd, "LargeCohort_PairedSubset_89Samples_Unblocked.csv", sep=""),row.names="X") #paired subset
@@ -745,9 +506,9 @@ counts_collapsed_paired<-counts_paired %>% group_by(geneIDs) %>% summarise_each(
 rownames(counts_collapsed_paired)<-counts_collapsed_paired$geneIDs
 counts_collapsed_paired<- counts_collapsed_paired[,2:ncol(counts_collapsed_paired)]
 
-#Filter to remove any species without >1 CPM in >=75% of samples =="detected"
+#Filter to remove any species without >1 CPM in >=50% of samples =="detected"
 CPM<-(counts_collapsed_paired/colSums(counts_collapsed_paired))*1000000
-CPM_Above1<- CPM[apply(CPM, 1, function(x) {sum(x>=1)})>(ncol(CPM)*.50),]
+CPM_Above1<- CPM[apply(CPM, 1, function(x) {sum(x>=1)})>(ncol(CPM)*.75),]
 counts_CPMPass<-counts_collapsed_paired[rownames(counts_collapsed_paired) %in% rownames(CPM_Above1),]
 
 #Read in paired samples- From BH. Add column for new sampleID- "sampleIDppm_Blocked/Unblocked". Needed since some sample IDs are replicated between blocked/unblocked. 
@@ -761,7 +522,7 @@ Create DESeq2 object, run pair-wise DE on all species
 ```{r}
 #create DESeq2 object- just based on samplegroup (blockerstatus)
 #will add samples to model later (i.e., pairwise analysis)
-dds<- DESeqDataSetFromMatrix(countData=counts_collapsed_paired, 
+dds<- DESeqDataSetFromMatrix(countData=counts_CPMPass, 
                        colData=pairedSamples, 
                        design=~blocker)
 
@@ -776,9 +537,9 @@ dds<- DESeq(ddsMF)
 res_paired<-na.omit(results(dds))
 resOrdered_paired<-res_paired[order(res_paired$padj),]
 
-nrow(resOrdered_paired[resOrdered_paired$padj<0.05,]) #270 (385 if unpaired)
-nrow(resOrdered_paired[resOrdered_paired$padj<0.01,]) #244 (295 if unpaired)
-nrow(resOrdered_paired[resOrdered_paired$padj<0.01 & abs(resOrdered_paired$log2FoldChange)>1,]) #138 (206 if unpaired)
+nrow(resOrdered_paired[resOrdered_paired$padj<0.05,]) #270 (385 if unpaired, 170 if paired+CPM 75% filter)
+nrow(resOrdered_paired[resOrdered_paired$padj<0.01,]) #244 (295 if unpaired, 154 if paired+CPM 75% filter)
+nrow(resOrdered_paired[resOrdered_paired$padj<0.01 & abs(resOrdered_paired$log2FoldChange)>1,]) #138 (206 if unpaired, 69 if paired+CPM 75% filter)
 
 #write.csv(resOrdered_paired, paste(wd, "PairedCohort_DESeq2Results_Collapsed.csv",sep=""))
 ```
@@ -787,9 +548,11 @@ nrow(resOrdered_paired[resOrdered_paired$padj<0.01 & abs(resOrdered_paired$log2F
 ```{r}
 #rld<-varianceStabilizingTransformation(dds)
 
-MinSubtract=0
-MaxSubtract=0
-nspecies=25
+MinSubtract=-3
+MaxSubtract=2
+nspecies=50
+fontsize=12 
+
   #Select top sig DE miRNAs
   topgenes<- rownames(resOrdered_paired[1:nspecies,])
   mat<- assay(rld)[topgenes,]
@@ -845,7 +608,7 @@ res_paired_RAT<-na.omit(results(dds))
 resOrdered_paired_RAT<-res_paired_RAT[order(res_paired_RAT$padj),]
 
 
-write.csv(resOrdered_paired_RAT, paste(wd, "PairedCohort_DESeq2Results_ActualTargetsRemoved.csv",sep=""))
+#write.csv(resOrdered_paired_RAT, paste(wd, "PairedCohort_DESeq2Results_ActualTargetsRemoved.csv",sep=""))
 
 nrow(resOrdered_paired_RAT[resOrdered_paired_RAT$padj<0.05,]) #275 ( 216 if CPM filtered) 
 nrow(resOrdered_paired_RAT[resOrdered_paired_RAT$padj<0.01,]) #243 ( 206 if CPM filtered)
@@ -890,9 +653,9 @@ nspecies=50
 
 Read in pre-processed count matrices- only processing is collapsing isomirs together + downsampling
 ```{r}
-writewd<-"C:/Users/Jenna/Documents/BlockerProject/"
-blocked_counts<-read.csv( paste(writewd, "BlockedRawCounts_TechCollapsed.csv", sep=""), row.names = "X")
-unblocked_counts<-read.csv( paste(writewd, "UnblockedRawCounts_TechCollapsed.csv", sep=""), row.names = "X")
+#read in paired data, blocked and unblocked
+unblocked_counts<-read.csv(paste(wd, "LargeCohort_PairedSubset_89Samples_Unblocked.csv", sep=""),row.names="X") #paired subset
+blocked_counts<-read.csv(paste(wd, "LargeCohort_PairedSubset_89Samples_Blocked.csv", sep=""),row.names="X") #paired subset
 
 #Collapse counts-remove everything after 3rd "-" (-1, -5p, etc), then merge and sum together based on new miR IDs
 blocked_counts$geneIDs<- sub("^([^-]*-[^-]*-[^-]*).*", "\\1", rownames(blocked_counts))
@@ -915,7 +678,7 @@ Get number of species passing thresholds, then plot
 ```{r}
 #Set desired thresholds
 thresholds<-seq(0,500,50)
-NumberInEachGroup<- length(thresholds)*5 #used for plotting later
+NumberInEachGroup<- length(thresholds)*(89+1) #used for plotting later
 
 #Get counts passing threshold for unblocked samples, then transform data- 4 columns: ID, threshold, #of species that passed that threshold, and blocker status
         unblockedPassThreshold<- as.data.frame(apply(unblockedCounts, 2, 
@@ -930,7 +693,7 @@ NumberInEachGroup<- length(thresholds)*5 #used for plotting later
         #reformat- melt
         unblockedPassThreshold<- melt(unblockedPassThreshold)
         colnames(unblockedPassThreshold)<- c("ID", "threshold","speciesPassingThreshold")
-        unblockedPassThreshold$status<- rep("unblocked", length(thresholds) * (518+1))
+        unblockedPassThreshold$status<- rep("unblocked", length(thresholds) * (ncol(unblockedCounts)+1))
         unblockedPassThreshold$threshold<- as.integer(as.character((unblockedPassThreshold$threshold)))
 
 
@@ -947,7 +710,7 @@ NumberInEachGroup<- length(thresholds)*5 #used for plotting later
         #reformat- melt
         blockedPassThreshold<- melt(blockedPassThreshold)
         colnames(blockedPassThreshold)<- c("ID", "threshold","speciesPassingThreshold")
-        blockedPassThreshold$status<- rep("blocked", length(thresholds) * (525+1))
+        blockedPassThreshold$status<- rep("blocked", length(thresholds) * (ncol(blockedCounts)+1))
         blockedPassThreshold$threshold<- as.integer(as.character((blockedPassThreshold$threshold)))
 
 #combine into one
@@ -980,28 +743,166 @@ p<-ggplot(passThreshold, aes(x=threshold, y=speciesPassingThreshold, color=statu
 means<- passThreshold[passThreshold$ID=="Mean",]
 ```
 
+
+#Number passing thresholds, plotted like pilot- for paired cohort
+```{r}
+#Set desired thresholds
+thresholds<-seq(0,500,100)
+NumberInEachGroup<- length(thresholds)*(89+1) #used for plotting later
+
+#Read in paired samples- From BH. 
+pairedSamples<-read.csv(paste(wd, "PairedSamples_LargeCohort_FromBH.csv", sep=""), row.names = "UniqueID")
+pairedSamples<-pairedSamples[,-1]
+
+#Change column names of counts matrix from sample --> subject. 
+unblockedSubject<- as.data.frame(t(unblockedCounts))
+blockedSubject<- as.data.frame(t(blockedCounts))
+
+# Merge with subject info --> make that the rowname --> retranspose
+unblockedSubject<-merge(unblockedSubject, pairedSamples, by=0)[,!(colnames(unblockedSubject)=="blocker"),]
+blockedSubject<-merge(blockedSubject, pairedSamples, by=0)[,!(colnames(blockedSubject)=="blocker"),]
+
+rownames(unblockedSubject)<-unblockedSubject$phenoId
+rownames(blockedSubject)<-blockedSubject$phenoId
+
+unblockedSubject<-unblockedSubject[,-1]
+blockedSubject<-blockedSubject[,-1]
+
+unblockedSubject<-as.data.frame(t(unblockedSubject))
+blockedSubject<-as.data.frame(t(blockedSubject))
+
+#Convert counts from factor -->integer
+unblockedSubject_int<-as.data.frame(apply(unblockedSubject, 2, as.integer))
+blockedSubject_int<-as.data.frame(apply(blockedSubject, 2, as.integer))
+rownames(unblockedSubject_int)<- rownames(unblockedSubject)
+rownames(blockedSubject_int)<- rownames(blockedSubject)
+unblockedSubject<-na.omit(unblockedSubject_int)
+blockedSubject<-na.omit(blockedSubject_int)
+
+#Get counts passing threshold for unblocked samples, then transform data- 4 columns: ID (A/b/c/d), threshold, #of species that passed that threshold, and blocker status
+        unblockedPassThreshold<- as.data.frame(apply(unblockedSubject, 2, 
+                                                     CountsPassingThreshold, thresholds))
+        rownames(unblockedPassThreshold)<- thresholds
+        
+        #add 4th column: mean of all samples
+        unblockedPassThreshold$Mean<- rowMeans(unblockedPassThreshold)
+        unblockedPassThreshold<- as.data.frame(t(unblockedPassThreshold))
+        unblockedPassThreshold$ID<- rownames(unblockedPassThreshold)
+        
+        #reformat- melt
+        unblockedPassThreshold<- melt(unblockedPassThreshold)
+        colnames(unblockedPassThreshold)<- c("ID", "threshold","speciesPassingThreshold")
+        unblockedPassThreshold$status<- rep("unblocked", NumberInEachGroup)
+        unblockedPassThreshold$threshold<- as.integer(as.character((unblockedPassThreshold$threshold)))
+
+#Get counts passing threshold for blocked samples, then transform data- 4 columns: ID (A/b/c/d), threshold, #of species that passed that threshold, and blocker status
+        blockedPassThreshold<- as.data.frame(apply(blockedSubject, 2, 
+                                                     CountsPassingThreshold, thresholds))
+        rownames(blockedPassThreshold)<- thresholds
+        
+        #add 4th column: mean of all samples
+        blockedPassThreshold$Mean<- rowMeans(blockedPassThreshold)
+        blockedPassThreshold<- as.data.frame(t(blockedPassThreshold))
+        blockedPassThreshold$ID<- rownames(blockedPassThreshold)
+        
+        #reformat- melt
+        blockedPassThreshold<- melt(blockedPassThreshold)
+        colnames(blockedPassThreshold)<- c("ID", "threshold","speciesPassingThreshold")
+        blockedPassThreshold$status<- rep("blocked", NumberInEachGroup)
+        blockedPassThreshold$threshold<- as.integer(as.character((blockedPassThreshold$threshold)))
+
+#combine into one
+passThreshold<-rbind(unblockedPassThreshold,blockedPassThreshold)
+
+#reformat so that you have 4 columns: ID, threshold, #species passing in noblocker, #species passing in blocker
+PT<-data.frame(passThreshold$ID[1:NumberInEachGroup],
+               passThreshold$threshold[1:NumberInEachGroup],
+               passThreshold$speciesPassingThreshold[1:NumberInEachGroup],
+               passThreshold$speciesPassingThreshold[(NumberInEachGroup+1):nrow(passThreshold)])
+colnames(PT)<- c("ID", "threshold", "SpeciesPT_noblocker", "SpeciesPT_blocker")
+
+#now need to subtract each- i.e., sample X at threshold 1 with no blocker vs with blocker. get those values for all, then plot. 
+df<- as_tibble(PT)
+df<-df%>% group_by(ID) %>% mutate(BlockerMinusNoBlocker=SpeciesPT_blocker-SpeciesPT_noblocker) %>% as.data.frame()
+df$Mean<- rep(c(rep("Sample",89),"Mean"),length(thresholds))
+df$Mean<- as.factor(df$Mean)
+
+Samplecolors<- c("goldenrod1","violetred3", "skyblue3", "darkolivegreen4")
+
+#plot
+p<- ggplot(df, aes(x=threshold, y=BlockerMinusNoBlocker, color=ID))+
+  geom_line(aes(linetype = Mean, group=ID, size=Mean))+
+  scale_linetype_manual(values= c("solid", "dashed"),guide=FALSE)+
+  scale_size_manual(values=c("Sample"=1.2,"Mean"=2), guide=FALSE)+
+  #geom_point(size=1.3)+
+  xlab("Count threshold")+
+  ylab("n additional species detected in blocked libraries")+
+  #scale_y_continuous(breaks=seq(0, 250, 50), limits=c(0,250))+
+  scale_x_continuous(breaks=seq(0, max(df$threshold), 50))+
+  #scale_color_manual(values=c("goldenrod1","violetred3", "skyblue3", "darkolivegreen4", "black"))+
+  theme_classic()+
+  guides(color = guide_legend(override.aes = list(size = 2)))+
+  theme(axis.text.y   = element_text(size=12, colour = "black", face= "bold"),
+        axis.title.y  = element_text(size=16, colour = "black", face= "bold"),
+        axis.text.x   = element_text(size=12, colour = "black", face= "bold"),
+        axis.title.x  = element_text(size=16, colour = "black", face= "bold"),
+        panel.border = element_rect(colour = "black", fill=NA, size=2),
+        legend.title=element_blank(),
+        legend.position = c(.9,.85),
+        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
+        legend.key.size = unit(.4, "cm"),
+        legend.spacing.y = unit(0, "mm"),
+        legend.text=element_text(size=14, face="bold"))
+p
+```
+
+#For paired cohort: Get change in mapping to targets for each pair --> average
+
+```{r}
+blocked_targets<-blockedSubject[rownames(blockedSubject) %in% c("hsa-miR-451a", "hsa-miR-486", "hsa-miR-92a"),]
+unblocked_targets<-unblockedSubject[rownames(unblockedSubject) %in% c("hsa-miR-451a", "hsa-miR-486", "hsa-miR-92a"),]
+
+blocked_PerMapTargets<-blocked_targets/colSums(blockedSubject)*100
+unblocked_PerMapTargets<-unblocked_targets/colSums(unblockedSubject)*100
+
+blocked_PerMapTargets<- blocked_PerMapTargets[,order(colnames(blocked_PerMapTargets))]
+unblocked_PerMapTargets<- unblocked_PerMapTargets[,order(colnames(unblocked_PerMapTargets))]
+
+test<-mapply(blocked_PerMapTargets, unblocked_PerMapTargets, 2,function(x,y){x-y})
+
+```
+
+
 #For paired cohort data: Get off targets, plot. Export potential off-targets to csv.
  
 ```{r}
+#Get merged raw counts- only downsampled + isomirs collapsed
+counts<-merge(unblockedCounts, blockedCounts, by=0)
+rownames(counts)<-counts$Row.names
+counts<-counts[,-1]
+
 #Get sig DE genes- p<0.01 and baseMean>50
-sig<-resOrdered[resOrdered$padj<0.01,]
+sig<-resOrdered_paired[resOrdered_paired$padj<0.01,]
 sig<-sig[sig$baseMean>=50,]
-sig<- sig[abs(sig$log2FoldChange)>=0.5,]
+sig<- sig[abs(sig$log2FoldChange)>=0.5,] #101
 
 #Add in CPM data for these miRNAs- across all 16 libraries
+        #Convert to CPM
+        counts_cpm<- (counts/colSums(counts)) *1000000
+        
+        #Get CPM for blocked and unblocked for sig miRs
+        Unblocked_SigCPM<- as.data.frame(rowMeans(unblockedCounts[rownames(unblockedCounts) %in% rownames(sig),]))
+        Blocked_SigCPM<- as.data.frame(rowMeans(blockedCounts[rownames(blockedCounts) %in% rownames(sig),]))
+        
+        #Merge with DE data, reformat
+        OT<- merge(as.data.frame(sig[,c(1,2,6)]), Unblocked_SigCPM, by=0)
+        rownames(OT)<-OT$Species
+        OT<- merge(OT, Blocked_SigCPM, by=0)
+        OT<-OT[,-1]
+        colnames(OT)<- c("Species", "baseMean", "log2FoldChange", "padj", "MeanCPMUnblockedCounts", "MeanCPMBlockedCounts")
 
-#Convert to CPM
-counts_cpm<- counts_collapsed/colSums(counts_collapsed) *1000000
-
-Unblocked_RawCounts<- as.data.frame(rowMeans(counts_cpm[rownames(counts_cpm) %in% rownames(sig),colnames(counts_cpm) %in% colnames(unblocked_counts)]))
-Blocked_RawCounts<- as.data.frame(rowMeans(counts_cpm[rownames(counts_cpm) %in% rownames(sig),colnames(counts_cpm) %in% colnames(blocked_counts)]))
-OT<- merge(as.data.frame(sig[,c(1,2,6)]), Unblocked_RawCounts, by=0)
-rownames(OT)<-OT$Row.names
-colnames(OT)<- c("Species", "baseMean", "log2FoldChange", "padj", "MeanCPMUnblockedCounts")
-OT<- merge(OT, Blocked_RawCounts, by=0)
-OT<-OT[,-1]
-colnames(OT)<- c("Species", "baseMean", "log2FoldChange", "padj", "MeanCPMUnblockedCounts", "MeanCPMBlockedCounts")
-OT$MeanRawCounts<- rowMeans(OT[,5:6])
+#Get mean of CPM- used for plotting- and reformat species name
+OT$MeanCPM<- rowMeans(OT[,5:6])
 OT$Species<-gsub("hsa-", "", OT$Species)
 
 #Annotate by whether species is a target miR
@@ -1010,15 +911,13 @@ ActualTargets<- c('miR-486','miR-92a','miR-451a') #BS
 OT$Target<- OT$Species %in% ActualTargets
 
 #Entire list of all species in target family
-Target_92<- rownames(counts_collapsed[grep("miR-92", rownames(counts_collapsed)),])
-
-Target_451<- rownames(counts_collapsed[grep("miR-451", rownames(counts_collapsed)),]) 
-
-Target_486<- rownames(counts_collapsed[grep("miR-486", rownames(counts_collapsed)),]) 
-
-Target_25<- rownames(counts_collapsed[grep("miR-25", rownames(counts_collapsed)),]) #CL or BS
-
+Target_92<- rownames(counts[grep("miR-92", rownames(counts)),])
+Target_451<- rownames(counts[grep("miR-451", rownames(counts)),]) 
+Target_486<- rownames(counts[grep("miR-486", rownames(counts)),]) 
+Target_25<- rownames(counts[grep("miR-25", rownames(counts)),]) #CL or BS
 TargetFamilies<- gsub("hsa-", "", c(Target_451,Target_486,Target_92, Target_25))
+
+#Add family info in
 OT$TargetFamily<- OT$Species %in% TargetFamilies
 OT$Color<- as.factor(rowSums(OT[,c(8,9)]))
 OT$Color<- gsub(0, "Non-Target miR", OT$Color)
@@ -1032,14 +931,14 @@ SubsetToLabel$Species<- gsub("hsa-", "", SubsetToLabel$Species)
 ```
 
 ```{r}
-write.csv(OT, paste(wd,"OffTargetStats_BaseSpacePilot.csv", sep=""))
+write.csv(OT, paste(wd,"OffTargetStats_PairedCohort_PairwiseDESeq2_TargetsIncluded_75CPMFilter.csv", sep=""))
 ```
 
-Plot off target effects- same as in figure 3A, using pilot data. This plot not used as figure.
+Plot off target effects- same as in figure 3A, using pilot data.
 ```{r}
 #plot
 p<-ggplot(OT,aes(x=log2FoldChange, y= log2(padj+1e-100), fill=Color))+
-  geom_point(aes(size=MeanRawCounts), pch=21, color="black")+
+  geom_point(aes(size=MeanCPM), pch=21, color="black")+
   scale_size_continuous(range = c(1, 50), guide=FALSE)+
   #scale_x_continuous(limits=c(-6,6),n.breaks = 7)+
   #scale_y_continuous(limits = c(-0.008, .05))+
