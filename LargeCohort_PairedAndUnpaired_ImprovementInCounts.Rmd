@@ -1,0 +1,283 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#Large Cohort: Paired and unpaired (full) Datasets: improvement in number of species passing count threshold
+
+
+Import libraries
+```{r}
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(reshape2))
+suppressPackageStartupMessages(library(purrr))
+suppressPackageStartupMessages(library(tibble))
+suppressPackageStartupMessages(library(metaseqR))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(DESeq2))
+suppressPackageStartupMessages(library(pheatmap))
+suppressPackageStartupMessages(library(ggrepel))
+suppressPackageStartupMessages(library(ggpubr))
+suppressPackageStartupMessages(library(gsubfn))
+windowsFonts("Arial" = windowsFont("Arial"))
+```
+
+Functions
+```{r}
+#Function that takes a column of counts and returns the number of species that pass the given list of threhsolds
+CountsPassingThreshold<- function(counts, threshold){
+  Passthreshold<-c()
+  for (i in 1:length(threshold)){
+    Passthreshold[i]<- sum(counts>threshold[i])
+    
+  }
+  return(Passthreshold)
+}
+
+Head<-function(x){x[1:10,1:10]}
+```
+
+
+#Overall steps:
+
+1: Read in count matrixes- full cohort and paired cohort- and preprocess by collapsing together mature/isomiR
+2: For full cohort: plot the number of species passing count thresholds
+3: For paired cohort: plot the change in blocked/unblocked number of species passing count thresholds
+
+
+#1: Read in count matrixes- full cohort and paired cohort- and preprocess by collapsing together mature/isomiR
+```{r}
+#unpaired, full dataset
+unblocked_counts_Full<-read.csv(paste(wd, "UnblockedRawCounts_TechCollapsed.csv",sep=""),row.names="X") #unpaired full dataset
+blocked_counts_Full<-read.csv(paste(wd, "BlockedRawCounts_TechCollapsed.csv",sep=""),row.names="X") #unpaired full dataset
+
+#paired data, blocked and unblocked
+unblocked_counts_paired<-read.csv(paste(wd, "LargeCohort_PairedSubset_89Samples_Unblocked.csv", sep=""),row.names="X") #paired subset
+blocked_counts_paired<-read.csv(paste(wd, "LargeCohort_PairedSubset_89Samples_Blocked.csv", sep=""),row.names="X") #paired subset
+
+
+#Collapse counts-remove everything after 3rd "-" (-1, -5p, etc), then merge and sum together based on new miR IDs
+
+#Full Dataset:
+        blocked_counts_Full$geneIDs<- sub("^([^-]*-[^-]*-[^-]*).*", "\\1", rownames(blocked_counts_Full))
+        blocked_counts_Full$geneIDs<- gsub("mir", "miR", blocked_counts_Full$geneIDs)
+        blocked_counts_Full_collapsed<-blocked_counts_Full %>% group_by(geneIDs) %>% summarise_each(funs(sum)) %>% as.data.frame
+        rownames(blocked_counts_Full_collapsed)<-blocked_counts_Full_collapsed$geneIDs
+        blocked_counts_Full_collapsed<- blocked_counts_Full_collapsed[,2:ncol(blocked_counts_Full_collapsed)]
+        
+        unblocked_counts_Full$geneIDs<- sub("^([^-]*-[^-]*-[^-]*).*", "\\1", rownames(unblocked_counts_Full))
+        unblocked_counts_Full$geneIDs<- gsub("mir", "miR", unblocked_counts_Full$geneIDs)
+        unblocked_counts_Full_collapsed<-unblocked_counts_Full %>% group_by(geneIDs) %>% summarise_each(funs(sum)) %>% as.data.frame
+        rownames(unblocked_counts_Full_collapsed)<-unblocked_counts_Full_collapsed$geneIDs
+        unblocked_counts_Full_collapsed<- unblocked_counts_Full_collapsed[,2:ncol(unblocked_counts_Full_collapsed)]
+        
+#Paired Dataset:
+        blocked_counts_paired$geneIDs<- sub("^([^-]*-[^-]*-[^-]*).*", "\\1", rownames(blocked_counts_paired))
+        blocked_counts_paired$geneIDs<- gsub("mir", "miR", blocked_counts_paired$geneIDs)
+        blocked_counts_paired_collapsed<-blocked_counts_paired %>% group_by(geneIDs) %>% summarise_each(funs(sum)) %>% as.data.frame
+        rownames(blocked_counts_paired_collapsed)<-blocked_counts_paired_collapsed$geneIDs
+        blocked_counts_paired_collapsed<- blocked_counts_paired_collapsed[,2:ncol(blocked_counts_paired_collapsed)]
+        
+        unblocked_counts_paired$geneIDs<- sub("^([^-]*-[^-]*-[^-]*).*", "\\1", rownames(unblocked_counts_paired))
+        unblocked_counts_paired$geneIDs<- gsub("mir", "miR", unblocked_counts_paired$geneIDs)
+        unblocked_counts_paired_collapsed<-unblocked_counts_paired %>% group_by(geneIDs) %>% summarise_each(funs(sum)) %>% as.data.frame
+        rownames(unblocked_counts_paired_collapsed)<-unblocked_counts_paired_collapsed$geneIDs
+        unblocked_counts_paired_collapsed<- unblocked_counts_paired_collapsed[,2:ncol(unblocked_counts_paired_collapsed)]
+```
+
+
+#2: Plot the number of species passing count thresholds for blocked and unblocked datasets (full cohort)
+
+
+Get number of species passing thresholds, then plot
+```{r}
+#Set desired thresholds
+thresholds<-seq(0,500,50)
+NumberInEachGroup<- length(thresholds)*(89+1) #used for plotting later
+
+#Get counts passing threshold for unblocked samples, then transform data- 4 columns: ID, threshold, #of species that passed that threshold, and blocker status
+        unblockedPassThreshold<- as.data.frame(apply(unblocked_counts_Full_collapsed, 2, 
+                                                     CountsPassingThreshold, thresholds))
+        rownames(unblockedPassThreshold)<- thresholds
+        
+        #add 4th column: mean of all samples
+        unblockedPassThreshold$Mean<- rowMeans(unblockedPassThreshold)
+        unblockedPassThreshold<- as.data.frame(t(unblockedPassThreshold))
+        unblockedPassThreshold$ID<- rownames(unblockedPassThreshold)
+        
+        #reformat- melt
+        unblockedPassThreshold<- melt(unblockedPassThreshold)
+        colnames(unblockedPassThreshold)<- c("ID", "threshold","speciesPassingThreshold")
+        unblockedPassThreshold$status<- rep("unblocked", length(thresholds) * (ncol(unblocked_counts_Full_collapsed)+1))
+        unblockedPassThreshold$threshold<- as.integer(as.character((unblockedPassThreshold$threshold)))
+
+
+#Get counts passing threshold for blocked samples, then transform data- 4 columns: ID, threshold, #of species that passed that threshold, and blocker status
+        blockedPassThreshold<- as.data.frame(apply(blocked_counts_Full_collapsed, 2, 
+                                                     CountsPassingThreshold, thresholds))
+        rownames(blockedPassThreshold)<- thresholds
+        
+        #add 4th column: mean of all samples
+        blockedPassThreshold$Mean<- rowMeans(blockedPassThreshold)
+        blockedPassThreshold<- as.data.frame(t(blockedPassThreshold))
+        blockedPassThreshold$ID<- rownames(blockedPassThreshold)
+        
+        #reformat- melt
+        blockedPassThreshold<- melt(blockedPassThreshold)
+        colnames(blockedPassThreshold)<- c("ID", "threshold","speciesPassingThreshold")
+        blockedPassThreshold$status<- rep("blocked", length(thresholds) * (ncol(blocked_counts_Full_collapsed)+1))
+        blockedPassThreshold$threshold<- as.integer(as.character((blockedPassThreshold$threshold)))
+
+#combine into one
+passThreshold<-rbind(unblockedPassThreshold,blockedPassThreshold)
+passThreshold$status<-factor(passThreshold$status, levels=c("unblocked", "blocked"))
+test<-passThreshold[passThreshold$status=="unblocked",]
+
+#Plot
+p<-ggplot(passThreshold, aes(x=threshold, y=speciesPassingThreshold, color=status))+
+        geom_point(position="jitter",stat="identity",size=2,alpha=0.2)+
+        scale_color_manual(values=c("turquoise3","firebrick3"))+
+        theme_classic()+
+        scale_x_continuous(breaks=seq(0,500,50))+
+        scale_y_continuous(breaks=seq(0,600,100))+
+        xlab("Counts threshold")+
+        ylab("Number of miRs passing counts threshold")+
+        theme(axis.text.x = element_text(size=12,face="bold",color="black"),
+              axis.text.y = element_text(size=12,face="bold",color="black"),
+              axis.title.x = element_text(size=14,face="bold",color="black"),
+              axis.title.y = element_text(size=14,face="bold",color="black"),
+              legend.title=element_blank(),
+              legend.text = element_text(size=14, face="bold"),
+              legend.position=c(.85,.85),
+              legend.background = element_rect(fill=NA, size=1, 
+                                         linetype="solid", color="black"),
+              panel.border = element_rect(colour = "black", fill=NA, size=2))
+        
+
+
+means<- passThreshold[passThreshold$ID=="Mean",]
+```
+
+
+#3: For paired cohort: plot the change in blocked/unblocked number of species passing count thresholds
+```{r}
+#Set desired thresholds
+thresholds<-seq(0,500,100)
+NumberInEachGroup<- length(thresholds)*(89+1) #used for plotting later
+
+#Read in paired samples- From BH. 
+pairedSamples<-read.csv(paste(wd, "PairedSamples_LargeCohort_FromBH.csv", sep=""), row.names = "UniqueID")
+pairedSamples<-pairedSamples[,-1]
+
+#Change column names of counts matrix from sample --> subject. 
+unblockedSubject<- as.data.frame(t(unblocked_counts_paired_collapsed))
+blockedSubject<- as.data.frame(t(blocked_counts_paired_collapsed))
+
+# Merge with subject info --> make that the rowname --> retranspose
+unblockedSubject<-merge(unblockedSubject, pairedSamples, by=0)[,!(colnames(unblockedSubject)=="blocker"),]
+blockedSubject<-merge(blockedSubject, pairedSamples, by=0)[,!(colnames(blockedSubject)=="blocker"),]
+
+rownames(unblockedSubject)<-unblockedSubject$phenoId
+rownames(blockedSubject)<-blockedSubject$phenoId
+
+unblockedSubject<-unblockedSubject[,-1]
+blockedSubject<-blockedSubject[,-1]
+
+unblockedSubject<-as.data.frame(t(unblockedSubject))
+blockedSubject<-as.data.frame(t(blockedSubject))
+
+#Convert counts from factor -->integer
+unblockedSubject_int<-as.data.frame(apply(unblockedSubject, 2, as.integer))
+blockedSubject_int<-as.data.frame(apply(blockedSubject, 2, as.integer))
+rownames(unblockedSubject_int)<- rownames(unblockedSubject)
+rownames(blockedSubject_int)<- rownames(blockedSubject)
+unblockedSubject<-na.omit(unblockedSubject_int)
+blockedSubject<-na.omit(blockedSubject_int)
+
+#Get counts passing threshold for unblocked samples, then transform data- 4 columns: ID (A/b/c/d), threshold, #of species that passed that threshold, and blocker status
+        unblockedPassThreshold<- as.data.frame(apply(unblockedSubject, 2, 
+                                                     CountsPassingThreshold, thresholds))
+        rownames(unblockedPassThreshold)<- thresholds
+        
+        #add 4th column: mean of all samples
+        unblockedPassThreshold$Mean<- rowMeans(unblockedPassThreshold)
+        unblockedPassThreshold<- as.data.frame(t(unblockedPassThreshold))
+        unblockedPassThreshold$ID<- rownames(unblockedPassThreshold)
+        
+        #reformat- melt
+        unblockedPassThreshold<- melt(unblockedPassThreshold)
+        colnames(unblockedPassThreshold)<- c("ID", "threshold","speciesPassingThreshold")
+        unblockedPassThreshold$status<- rep("unblocked", NumberInEachGroup)
+        unblockedPassThreshold$threshold<- as.integer(as.character((unblockedPassThreshold$threshold)))
+
+#Get counts passing threshold for blocked samples, then transform data- 4 columns: ID (A/b/c/d), threshold, #of species that passed that threshold, and blocker status
+        blockedPassThreshold<- as.data.frame(apply(blockedSubject, 2, 
+                                                     CountsPassingThreshold, thresholds))
+        rownames(blockedPassThreshold)<- thresholds
+        
+        #add 4th column: mean of all samples
+        blockedPassThreshold$Mean<- rowMeans(blockedPassThreshold)
+        blockedPassThreshold<- as.data.frame(t(blockedPassThreshold))
+        blockedPassThreshold$ID<- rownames(blockedPassThreshold)
+        
+        #reformat- melt
+        blockedPassThreshold<- melt(blockedPassThreshold)
+        colnames(blockedPassThreshold)<- c("ID", "threshold","speciesPassingThreshold")
+        blockedPassThreshold$status<- rep("blocked", NumberInEachGroup)
+        blockedPassThreshold$threshold<- as.integer(as.character((blockedPassThreshold$threshold)))
+
+#combine into one
+passThreshold<-rbind(unblockedPassThreshold,blockedPassThreshold)
+
+#reformat so that you have 4 columns: ID, threshold, #species passing in noblocker, #species passing in blocker
+PT<-data.frame(passThreshold$ID[1:NumberInEachGroup],
+               passThreshold$threshold[1:NumberInEachGroup],
+               passThreshold$speciesPassingThreshold[1:NumberInEachGroup],
+               passThreshold$speciesPassingThreshold[(NumberInEachGroup+1):nrow(passThreshold)])
+colnames(PT)<- c("ID", "threshold", "SpeciesPT_noblocker", "SpeciesPT_blocker")
+
+#now need to subtract each- i.e., sample X at threshold 1 with no blocker vs with blocker. get those values for all, then plot. 
+df<- as_tibble(PT)
+df<-df%>% group_by(ID) %>% mutate(BlockerMinusNoBlocker=SpeciesPT_blocker-SpeciesPT_noblocker) %>% as.data.frame()
+df$Mean<- rep(c(rep("Sample",89),"Mean"),length(thresholds))
+df$Mean<- as.factor(df$Mean)
+
+Samplecolors<- c("goldenrod1","violetred3", "skyblue3", "darkolivegreen4")
+
+#plot
+p<- ggplot(df, aes(x=threshold, y=BlockerMinusNoBlocker, color=ID))+
+  geom_line(aes(linetype = Mean, group=ID, size=Mean))+
+  scale_linetype_manual(values= c("solid", "dashed"),guide=FALSE)+
+  scale_size_manual(values=c("Sample"=1.2,"Mean"=2), guide=FALSE)+
+  #geom_point(size=1.3)+
+  xlab("Count threshold")+
+  ylab("n additional species detected in blocked libraries")+
+  #scale_y_continuous(breaks=seq(0, 250, 50), limits=c(0,250))+
+  scale_x_continuous(breaks=seq(0, max(df$threshold), 50))+
+  #scale_color_manual(values=c("goldenrod1","violetred3", "skyblue3", "darkolivegreen4", "black"))+
+  theme_classic()+
+  guides(color = guide_legend(override.aes = list(size = 2)))+
+  theme(axis.text.y   = element_text(size=12, colour = "black", face= "bold"),
+        axis.title.y  = element_text(size=16, colour = "black", face= "bold"),
+        axis.text.x   = element_text(size=12, colour = "black", face= "bold"),
+        axis.title.x  = element_text(size=16, colour = "black", face= "bold"),
+        panel.border = element_rect(colour = "black", fill=NA, size=2),
+        legend.title=element_blank(),
+        legend.position = c(.9,.85),
+        legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
+        legend.key.size = unit(.4, "cm"),
+        legend.spacing.y = unit(0, "mm"),
+        legend.text=element_text(size=14, face="bold"))
+p
+```
+
+This plot not used- only actually will use the mean. Will be combined with the pilot graph, same analysis. Export just the mean data here to be used with the pilot:
+```{r}
+means<-df[df$ID=="Mean",]
+write.csv(means, paste(wd, "LargePairedCohort_SpeciesPassingThresholds_MeansOnly.csv",sep=""))
+```
+
+```{r}
+sessionInfo()
+```
+

@@ -1,0 +1,284 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#Large cohort: Import, merging, and initial processing of blocked and unblocked data
+
+Only data from the large cohort is used here. Count matrices for this cohort were all generated using the Basespace small RNA app. All analyses using the large cohort are included here for clarity (Figure 1C, 2E, 4B, and supplemental figure 1B)
+
+Import libraries
+```{r}
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(reshape2))
+suppressPackageStartupMessages(library(purrr))
+suppressPackageStartupMessages(library(tibble))
+suppressPackageStartupMessages(library(metaseqR))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(DESeq2))
+suppressPackageStartupMessages(library(pheatmap))
+suppressPackageStartupMessages(library(ggrepel))
+suppressPackageStartupMessages(library(ggpubr))
+suppressPackageStartupMessages(library(gsubfn))
+windowsFonts("Arial" = windowsFont("Arial"))
+```
+
+#Overall steps:
+
+1: Read in data-from multiple folders- and merge into 1. Filter based on read count. Write file out for later use, as this step is computationally intensive.
+        a. Blocked dataset
+        b. Unblocked dataset
+2:  Read in filtered/merged unblocked data from step 1 --> Collapse technical replicates --> Write out for later use
+        a. Blocked dataset: output as "BlockedRawCounts_TechCollapsed.csv"
+        b. Unblocked dataset: output as "UnblockedRawCounts_TechCollapsed.csv"
+3: Subset to only samples that are in a paired blocked/unblocked set
+        a. Blocked dataset: output as "LargeCohort_PairedSubset_89Samples_Blocked.csv"
+        b. Unblocked dataset: output as "LargeCohort_PairedSubset_89Samples_Unblocked.csv"
+
+#1a Read in unblocked data-from multiple folders- and merge into 1
+```{r}
+unblocked_readwd<-"Z:/Small_RNA/BaseSpace/"
+
+#Get filenames needed
+filenames1<-c("Hersh_PT8_Rerun_Small_RNA_11072017_counts",
+             "Hersh-miRNA-PT9Reruns_Small_RNA_12182017_counts")
+
+filenames2<-c("9256704449-2_Small_RNA_05252017_counts",
+             "9416449660-3_Small_RNA_06282017_counts",
+             "9597590455-6_Small_RNA_06292017_counts",
+             "9959254099-1_Small_RNA_10062017_counts",
+             "10272166057-5_Small_RNA_08212017_counts",
+             "10284133418-9_Small_RNA_08212017_counts")
+
+filenames3<- c("AERD_miRNA_Sequencing_Small_RNA_10062017_counts",
+               "Kelan_Viva_miRNA_Small_RNA_09272017_counts"
+        
+)
+
+filenames4<-c("Hersh_PT8_Rerun_Small_RNA_11072017_counts",
+             "Hersh-miRNA-PT9Reruns_Small_RNA_12182017_counts",
+             "9256704449-2_Small_RNA_05252017_counts",
+             "9416449660-3_Small_RNA_06282017_counts",
+             "9597590455-6_Small_RNA_06292017_counts",
+             "10272166057-5_Small_RNA_08212017_counts",
+             "10284133418-9_Small_RNA_08212017_counts"
+            )
+
+filenames<-filenames4
+#Read in files
+unblocked_input<-list()
+for (i in 1:length(filenames)){
+        df<-read.csv(paste(unblocked_readwd, filenames[i], ".csv", sep=""), stringsAsFactors = FALSE)
+        df<-df[-1,]
+        unblocked_input[[i]]<-df
+}
+
+
+```
+
+
+Merge into one dataset, filter based on total reads per sample and per miRNA
+```{r}
+#Merge into one dataset
+unblocked_all_input<- unblocked_input %>% purrr::reduce(full_join, by = "X")
+
+#Convert to integer, remove NA
+Rownames<-unblocked_all_input$X
+rownames(unblocked_all_input)<-Rownames
+unblocked_all<-unblocked_all_input[,-1]
+unblocked_all<- as.data.frame(apply(unblocked_all, 2, as.integer))
+rownames(unblocked_all)<-Rownames
+unblocked_all<-na.omit(unblocked_all)
+
+#Remove any samples with fewer than 2million total reads
+unblocked_RemoveSample<- unblocked_all[,colSums(unblocked_all)>2000000]
+
+#Downsample to common depth
+unblocked_DS<- downsample.counts(unblocked_RemoveSample, set.seed(42)) 
+#unblocked_DS$X<-Rownames
+unblocked_DS$X<-rownames(unblocked_DS)
+
+#sort and remove sequences from rownames, and convert to integer
+unblocked_sort<-  unblocked_DS[order(unblocked_DS[,1], decreasing = TRUE),]
+unblocked_sort$X<-rownames(unblocked_sort) 
+unblocked_sort$X<- gsub(".*_", "", unblocked_sort$X)
+
+#Collapse counts- multiple entries for a single species are collapsed into one
+unblocked_collapse<- unblocked_sort %>% as.tibble() %>% group_by(X) %>% summarise_all(funs(if(is.numeric(.)) sum(.) else "Total")) %>% as.data.frame
+rownames(unblocked_collapse)<-unblocked_collapse$X
+unblocked_collapse<-unblocked_collapse[,-1]
+```
+
+
+#1b: Read in blocked data-from multiple folders- and merge into 1. Filter based on read count. Write file out for later use, as this step is computationally intensive.
+```{r}
+blocked_readwd<-"Z:/COPD/miRNAseq/BaseSpace/"
+
+#Get filenames needed
+filenames<-c("21801069331-0_GECOPD_miRNASeq _Small_RNA_11222019_counts",
+             "21801069331-0_GECOPD_miRNASeq _Small_RNA_12032019_counts",
+             "21801069331-0_GECOPD_miRNASeq _Small_RNA_12042019_counts",
+             "21801069331-0_GECOPD_miRNASeq _Small_RNA_12102019_counts",
+             "21801069331-0_GECOPD_miRNASeq _Small_RNA_12112019_counts",
+             "24200081892-6_GECOPD_P6_miRNASeq _Small_RNA_03092020_counts")
+
+#Read in files
+blocked_input<-list()
+for (i in 1:length(filenames)){
+        df<-read.csv(paste(blocked_readwd, filenames[i], ".csv", sep=""), stringsAsFactors = FALSE)
+        df<-df[-1,]
+        blocked_input[[i]]<-df
+}
+
+```
+
+#Merge into one dataset, filter based on total reads per sample and per miRNA
+```{r}
+#Merge into one dataset
+blocked_all_input<- blocked_input %>% purrr::reduce(full_join, by = "X")
+
+#Convert to integer, remove NA
+Rownames<-blocked_all_input$X
+rownames(blocked_all_input)<-Rownames
+blocked_all<-blocked_all_input[,-1]
+blocked_all<- as.data.frame(apply(blocked_all, 2, as.integer))
+rownames(blocked_all)<-Rownames
+blocked_all<-na.omit(blocked_all)
+
+
+#Remove any samples with fewer than 2million total reads
+blocked_RemoveSample<- blocked_all[,colSums(blocked_all)>2000000]
+
+#Downsample to common depth
+blocked_DS<- downsample.counts(blocked_RemoveSample, set.seed(42)) 
+#blocked_DS$X<-Rownames
+blocked_DS$X<-rownames(blocked_DS)
+
+#sort and remove sequences from rownames, and convert to integer
+blocked_sort<-  blocked_DS[order(blocked_DS[,1], decreasing = TRUE),]
+blocked_sort$X<-rownames(blocked_sort)
+blocked_sort$X<- gsub(".*_", "", blocked_sort$X)
+
+
+#Collapse counts- multiple entries for a single species are collapsed into one
+blocked_collapse<- blocked_sort %>% as.tibble() %>% group_by(X) %>% summarise_all(funs(if(is.numeric(.)) sum(.) else "Total")) %>% as.data.frame
+rownames(blocked_collapse)<-blocked_collapse$X
+blocked_collapse<-blocked_collapse[,-1]
+```
+
+
+#write counts to csv for later use
+```{r}
+wd<-"C:/Users/Jenna/Documents/BlockerProject/"
+write.csv(unblocked_collapse, paste(wd, "LargeCohort_RawData_Unblocked.csv", sep=""))
+write.csv(blocked_collapse, paste(wd, "LargeCohort_RawData_blocked.csv", sep=""))
+```
+
+#2a: Read in filtered/merged unblocked data from step 1 --> Collapse technical replicates --> Write out for later use
+```{r}
+#read in counts- pre-processing in above chunk
+wd<-"C:/Users/Jenna/Documents/BlockerProject/"
+unblocked_collapse<-read.csv(paste(wd, "LargeCohort_RawData_Unblocked.csv"), row.names = "X")
+
+#Remove any species with < 10 total counts-optional
+unblocked_RemoveLow<- unblocked_collapse[rowSums(unblocked_collapse) >10,]
+unblocked_RemoveLow<-unblocked_collapse
+```
+
+
+#Collapse technical replicates- this dataset used as raw counts for rest of analysis
+```{r}
+#temporarily transpose data
+trans<-as.data.frame(t(unblocked_RemoveLow))
+trans$sample<-rownames(trans)
+
+#Remove control samples from counts table- only keeping samples named as "S."
+trans<-trans[grepl("S.",trans$sample),] #removes 2 controls
+
+#remove suffixes from sample names
+trans$sample<- gsub(paste0(c(".x", ".y", "Trimmed.x", "Trimmed.y", "Trimmed", "trimmed.x", "trimmed.y", "trimmed"), collapse="|"),"", trans$sample)
+
+#Collapse the same sample IDs together
+sampleIDsCollapsed_trans<- trans %>% group_by(sample) %>% dplyr::summarize_each(funs(mean)) %>% as.data.frame()
+
+#transpose data again
+unblocked_Ccounts<-data.frame(t(sampleIDsCollapsed_trans))
+colnames(unblocked_Ccounts)<-unlist(as.list(apply(unblocked_Ccounts[1,],1, as.character)))
+unblocked_Ccounts<-unblocked_Ccounts[-1,]
+
+#Convert to integer
+integer_counts<-as.data.frame(apply(unblocked_Ccounts, 2, as.integer))
+rownames(integer_counts)<-rownames(unblocked_Ccounts)
+```
+
+#2b:  Read in filtered/merged blocked data from step 1 --> Collapse technical replicates --> Write out for later use
+```{r}
+#red in counts- pre-processing in above chunka
+blocked_collapse<-read.csv( paste(wd, "LargeCohort_RawData_blocked.csv", sep=""), row.names = "X")
+
+#Remove any species with < 10 total counts  
+blocked_RemoveLow<- blocked_collapse[rowSums(blocked_collapse) >10,]
+blocked_RemoveLow<-blocked_collapse
+```
+
+#Collapse technical replicates- this dataset used as raw counts for rest of analysis
+```{r}
+#temporarily transpose data
+trans<-as.data.frame(t(blocked_RemoveLow))
+trans$sample<-rownames(trans)
+
+#Remove control samples from counts table- only keeping samples named as "S."
+trans<-trans[grepl("S.",trans$sample),] #removes 2 controls
+
+#remove suffixes from sample names
+trans$sample<- gsub(paste0(c(".x", ".y","Trimmed.x", "Trimmed.y", "Trimmed", "trimmed.x", "trimmed.y", "trimmed"), collapse="|"),"", trans$sample)
+
+#Collapse the same sample IDs together
+sampleIDsCollapsed_trans<- trans %>% group_by(sample) %>% dplyr::summarize_each(funs(mean)) %>% as.data.frame()
+
+#transpose data again
+blocked_Ccounts<-data.frame(t(sampleIDsCollapsed_trans))
+colnames(blocked_Ccounts)<-unlist(as.list(apply(blocked_Ccounts[1,],1, as.character)))
+blocked_Ccounts<-blocked_Ccounts[-1,]
+
+#Convert to integer
+integer_counts<-as.data.frame(apply(blocked_Ccounts, 2, as.integer))
+rownames(integer_counts)<-rownames(blocked_Ccounts)
+```
+
+#write to csv
+```{r}
+write.csv(integer_counts,paste(wd, "UnblockedRawCounts_TechCollapsed.csv",sep=""))
+write.csv(integer_counts,paste(wd, "BlockedRawCounts_TechCollapsed.csv",sep=""))
+```
+
+
+#3: Subset to only samples that are in a blocked/unblocked pair (from same subject)
+Use tech reps collapsed as starting point
+```{r}
+#Read in paired samples- From BH. Add column for new sampleID- "sampleIDppm_Blocked/Unblocked". Needed since some sample IDs are replicated between blocked/unblocked
+pairedSamples<-read.csv(paste(wd, "PairedSamples_LargeCohort_FromBH.csv", sep=""), stringsAsFactors = FALSE)
+pairedSamples$NewSampleID<- paste(gsub("-", ".",pairedSamples$sampIdPpm), 
+                                  gsubfn(".", list("0" = "Unblocked", "1" = "Blocked"), as.character(pairedSamples$blocker)),sep="_")
+
+#Read in unblocked raw counts, tech collapsed (generated above) --> change column names like New sample ID above
+unblocked_Counts<- read.csv(paste(wd, "UnblockedRawCounts_TechCollapsed.csv",sep=""))
+colnames(unblocked_Counts)<-paste(colnames(unblocked_Counts), "Unblocked", sep="_")
+
+#Read in blocked raw counts, tech collapsed (generated above) --> change column names like New sample ID above
+blocked_Counts<- read.csv(paste(wd, "BlockedRawCounts_TechCollapsed.csv",sep=""))
+colnames(blocked_Counts)<-paste(colnames(blocked_Counts), "Blocked", sep="_")
+
+#Subset raw counts to paired samples -89 total pairs
+paired_unblocked<-unblocked_Counts[,colnames(unblocked_Counts) %in% pairedSamples$NewSampleID]
+rownames(paired_unblocked)<- unblocked_Counts$X_Unblocked
+paired_blocked<-blocked_Counts[,colnames(blocked_Counts) %in% pairedSamples$NewSampleID]
+rownames(paired_blocked)<- blocked_Counts$X_Blocked
+```
+
+#write to csv
+```{r}
+write.csv(paired_unblocked, paste(wd, "LargeCohort_PairedSubset_89Samples_Unblocked.csv", sep=""))
+write.csv(paired_blocked, paste(wd, "LargeCohort_PairedSubset_89Samples_Blocked.csv", sep=""))
+```
+

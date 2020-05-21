@@ -1,0 +1,326 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#Large cohort: for paired and unpaired datasets (generated in "LargeCohort_ImportandInitialPreprocessing.Rmd"), plot the percentage of reads mapping to any target, the 3 targets, or any isomiR/mature form of a target
+
+Import libraries
+```{r}
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(reshape2))
+suppressPackageStartupMessages(library(purrr))
+suppressPackageStartupMessages(library(tibble))
+suppressPackageStartupMessages(library(metaseqR))
+suppressPackageStartupMessages(library(DESeq2))
+suppressPackageStartupMessages(library(pheatmap))
+suppressPackageStartupMessages(library(ggrepel))
+suppressPackageStartupMessages(library(ggpubr))
+suppressPackageStartupMessages(library(gsubfn))
+windowsFonts("Arial" = windowsFont("Arial"))
+```
+
+#Overall steps:
+
+1: Read in count matrices (for full cohort and paired subset), filter and calculate % mapping to 3 targets
+2: Calculate % mapping to any of the 3 targets --> plot
+3: Calculate % mapping to each of the 3 targets --> plot
+4: Calculate % mapping to each of the 11 possible mature/isomiR forms of the 3 targets -->plot 
+
+
+#1: Read in tech collapsed (paired or unpaired) --> Further filtering + plotting % map to targets
+Read in counts (full and paired datasets)
+```{r}
+#Read in tech collapsed raw counts (full)
+unblocked_Input_Full<-read.csv(paste(wd, "UnblockedRawCounts_TechCollapsed.csv",sep=""),row.names="X") #unpaired full dataset
+blocked_Input_Full<-read.csv(paste(wd, "BlockedRawCounts_TechCollapsed.csv",sep=""),row.names="X") #unpaired full dataset
+
+#Read in paired subset
+unblocked_Input_Paired<-read.csv(paste(wd, "LargeCohort_PairedSubset_89Samples_Unblocked.csv", sep=""),row.names="X") #paired subset
+blocked_Input_Paired<-read.csv(paste(wd, "LargeCohort_PairedSubset_89Samples_Blocked.csv", sep=""),row.names="X") #paired subset
+```
+
+
+Convert to CPM, calculate % mapping to targets
+```{r}
+#Set which datasets to use for rest of analysis (paired or full)
+unblocked_Input<-unblocked_Input_Full
+blocked_Input<-blocked_Input_Full
+
+#Unblocked:
+        #Convert to CPM
+        unblocked_CPM<-unblocked_Input/colSums(unblocked_Input) *1000000
+        
+        #Get total number of CPM for 3 targets-will be multiple lines, grep for targets.Sum together target CPMs
+                AllTargets<-c("hsa-miR-486", "hsa-miR-92a", "hsa-miR-451a")
+                #get targets
+                TargetCPM_1<-lapply(AllTargets, function(x) {unblocked_CPM[grep(x, rownames(unblocked_CPM), ignore.case = TRUE),]}) 
+                #remove miR-4511/4510
+                TargetCPM_2<-lapply(TargetCPM_1, function(x) {x[!(rownames(x) %in% c("hsa-miR-4511", 
+                                                                                     "hsa-miR-4510",
+                                                                                     "hsa-mir-4511", 
+                                                                                     "hsa-mir-4510")),]}) 
+                #merge multiple species in a family into one
+                TargetCPM_3<- lapply( TargetCPM_2, function(x) {colSums(x[,1:ncol(x)])}) 
+                TargetCPM<- as.data.frame(do.call(rbind, TargetCPM_3))
+                rownames(TargetCPM)<-AllTargets
+                TargetCPM<- TargetCPM[,order(colnames(TargetCPM))]
+        
+        
+        #Get percentage of total CPMs that 3 targets make up
+        unblocked_CPM<-unblocked_CPM[,order(colnames(unblocked_CPM))]
+        unblocked_TargetPercentageCPM<-TargetCPM/colSums(unblocked_CPM) *100
+        
+        #add row with percent mapping to non-target
+        unblocked_TargetPercentageCPM["AllOthers" ,] <- 100-colSums(unblocked_TargetPercentageCPM)
+
+#Blocked:
+        #Convert to CPM
+        blocked_CPM<-blocked_Input/colSums(blocked_Input) *1000000
+        
+        #Get total number of CPM for 3 targets-will be multiple lines, grep for targets.Sum together target CPMs
+                AllTargets<-c("hsa-miR-486", "hsa-miR-92a", "hsa-miR-451a")
+                #get targets
+                TargetCPM_1<-lapply(AllTargets, function(x) {blocked_CPM[grep(x, rownames(blocked_CPM), ignore.case=TRUE),]}) 
+                #remove miR-4511/4510
+                TargetCPM_2<-lapply(TargetCPM_1, function(x) {x[!(rownames(x) %in% c("hsa-miR-4511", 
+                                                                                     "hsa-miR-4510",
+                                                                                     "hsa-mir-4511", 
+                                                                                     "hsa-mir-4510")),]}) 
+                #merge multiple species in a family into one
+                TargetCPM_3<- lapply( TargetCPM_2, function(x) {colSums(x[,1:ncol(x)])}) 
+                TargetCPM<- as.data.frame(do.call(rbind, TargetCPM_3))
+                rownames(TargetCPM)<-AllTargets
+                TargetCPM<- TargetCPM[,order(colnames(TargetCPM))]
+        
+        
+        #Get percentage of total CPMs that 3 targets make up
+        blocked_CPM<-blocked_CPM[,order(colnames(blocked_CPM))]
+        blocked_TargetPercentageCPM<-TargetCPM/colSums(blocked_CPM) *100
+        
+        #add row with percent mapping to non-target
+        blocked_TargetPercentageCPM["AllOthers" ,] <- 100-colSums(blocked_TargetPercentageCPM)
+```
+
+
+#2: For blocked  and unblocked  data, plot the % mapping to any target 
+```{r}
+#sum percent mapping for the 3 targets, take mean across all samples
+blocked_all<- colSums(blocked_TargetPercentageCPM[1:3,])
+unblocked_all<- colSums(unblocked_TargetPercentageCPM[1:3,])
+df<-data.frame(Group=c("Blocked", "Unblocked"), 
+               PercentMapping=c(mean(blocked_all), mean(unblocked_all)),
+               sd=c(sd(blocked_all), sd(unblocked_all)))
+
+#plot
+p<-ggplot(df, aes(y=PercentMapping, x=reorder(Group, - PercentMapping),fill=Group))+
+  geom_bar(stat="identity", position="dodge", width=.7)+ 
+  theme_classic()+
+  ylab("Percent of reads mapping to targets species")+
+  xlab("")+
+  scale_fill_manual("", values=c("Blocked"="firebrick3", "Unblocked"="turquoise3"))+
+  geom_errorbar(aes(ymin=PercentMapping-sd, ymax=PercentMapping+sd), width=.1, size=1, position=position_dodge(.9),color="black")+
+  ylim(0,100)+
+  theme(axis.text.y   = element_text(size=12, color="black", face= "bold"),
+          axis.text.x   = element_text(size=14, color="black", face="bold"),
+          axis.title.y  = element_text(size=16, color="black", face="bold"),
+          panel.border = element_rect(colour = "black", fill=NA, size=2),
+          legend.title=element_blank(),
+          legend.position = "none",
+          legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
+          axis.text.x.bottom  =element_text(size=20))
+```
+
+Significance test comparing blocked and unblocked datasets:
+```{r}
+t.test(unname(blocked_all), unname(unblocked_all))
+```
+
+Print mean % mapping:
+```{r}
+df
+```
+
+#3: For blocked and unblocked datasets, plot percentage mapping to each of the 3 targets + all other non-heme miRs 
+```{r}
+#Add column for blocked/unblocked to "TargetPercentageCPM" dataframes
+unblocked_TargetPercentageCPM$BlockerStatus<-rep("Unblocked", nrow(unblocked_TargetPercentageCPM))
+blocked_TargetPercentageCPM$BlockerStatus<-rep("Blocked", nrow(blocked_TargetPercentageCPM))
+
+#reformat for plotting
+df_unblocked<-unblocked_TargetPercentageCPM
+df_unblocked$Species<- rownames(df_unblocked)
+df_unblocked_melt<- melt(df_unblocked, by="Species")
+
+df_blocked<-blocked_TargetPercentageCPM
+df_blocked$Species<- rownames(df_blocked)
+df_blocked_melt<- melt(df_blocked, by="Species")
+
+#Add column for ordering
+df_unblocked_melt$Order<- rep(1, nrow(df_unblocked_melt))
+df_blocked_melt$Order<- rep(2, nrow(df_blocked_melt))
+
+#rbind unblocked and blocked dataframes together
+bind_TargetPercentageCPM<- rbind(df_unblocked_melt, df_blocked_melt)
+bind_TargetPercentageCPM$Order<- rep(seq(1,length(unique(bind_TargetPercentageCPM$Species)),1),
+                                     nrow(bind_TargetPercentageCPM)/length(unique(bind_TargetPercentageCPM$Species)))
+bind_TargetPercentageCPM$BlockerStatus<-factor(bind_TargetPercentageCPM$BlockerStatus, levels=c("Unblocked", "Blocked"))
+
+
+#Plot
+p<-ggplot(bind_TargetPercentageCPM, aes(x = reorder(Species, Order), y =value, fill=BlockerStatus)) +
+        geom_boxplot(size=0.3,color="black",outlier.size = .7)+
+        ylab("Percent of total reads mapping")+
+        xlab("")+
+        theme_classic()+
+        scale_fill_manual("", values=c("Blocked"="firebrick3", "Unblocked"="turquoise3"))+
+        theme(axis.title.y = element_text(face="bold", size=16),
+              axis.text.y = element_text(face="bold", size=12, color="black"),
+              axis.text.x = element_text(face="bold", size=16, color="black", angle=45,hjust=1),
+              legend.text = element_text(face="bold", size=16),
+              legend.title=element_blank(),
+              panel.border = element_rect(colour = "black", fill=NA, size=2),
+              strip.background = element_rect(color = "black", size = 2),
+              legend.position=c(.72,.9),
+              legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
+              axis.ticks = element_line(size = 1.5,color="black"),
+              axis.ticks.length=unit(.2, "cm"))
+
+```
+
+Get significance values for comparing blocked/unblocked in each species
+```{r}
+#Run t.test for all species
+SplitDFBymiR<-split(bind_TargetPercentageCPM, bind_TargetPercentageCPM$Species)
+Ttest<- unlist(lapply(SplitDFBymiR, function(x) {t.test(x[x$BlockerStatus=="Unblocked",4],x[x$BlockerStatus=="Blocked", 4])$p.value}))
+Ttest
+```
+
+#Print out mean % mapping for each
+```{r}
+GetMeans<-bind_TargetPercentageCPM
+GetMeans$Grouping<-paste(GetMeans$BlockerStatus,"_", GetMeans$Species)
+GetMeans<- GetMeans %>% group_by(Grouping)  %>% mutate(mean=mean(value)) %>% as.data.frame()
+GetMeans[!duplicated(GetMeans$mean),]
+```
+
+#4: For blocked and unblocked datasets, plot percentage mapping to each of the 11 species (mature and isomiRs in target group)
+
+Get uncollapsed datasets- -3p/-5p/-1/-2 not collapsed together
+```{r}
+#Unblocked:
+        #Convert to CPM
+        unblocked_CPM<-unblocked_Input/colSums(unblocked_Input) *1000000
+        
+        #Get total number of CPM for 3 targets-will be multiple lines, grep for targets.Sum together target CPMs
+                AllTargets<-c("hsa-miR-486", "hsa-miR-92a", "hsa-miR-451a")
+                #get targets
+                TargetCPM_1<-lapply(AllTargets, function(x) {unblocked_CPM[grep(x, rownames(unblocked_CPM), ignore.case = TRUE),]}) 
+                #remove miR-4511/4510
+                TargetCPM_2<-lapply(TargetCPM_1, function(x) {x[!(rownames(x) %in% c("hsa-miR-4511", 
+                                                                                     "hsa-miR-4510",
+                                                                                     "hsa-mir-4511", 
+                                                                                     "hsa-mir-4510")),]}) 
+                TargetCPM<- as.data.frame(do.call(rbind, TargetCPM_2))
+                TargetCPM<- TargetCPM[,order(colnames(TargetCPM))]
+        
+        #Get percentage of total CPMs that 3 targets make up
+        unblocked_CPM<-unblocked_CPM[,order(colnames(unblocked_CPM))]
+        unblocked_TargetPercentageCPM<-TargetCPM/colSums(unblocked_CPM) *100
+        
+        #add row with percent mapping to non-target
+        unblocked_TargetPercentageCPM["AllOthers" ,] <- 100-colSums(unblocked_TargetPercentageCPM)
+
+#Blocked:
+        #Convert to CPM
+        blocked_CPM<-blocked_Input/colSums(blocked_Input) *1000000
+        
+        #Get total number of CPM for 3 targets-will be multiple lines, grep for targets.Sum together target CPMs
+                AllTargets<-c("hsa-miR-486", "hsa-miR-92a", "hsa-miR-451a")
+                #get targets
+                TargetCPM_1<-lapply(AllTargets, function(x) {blocked_CPM[grep(x, rownames(blocked_CPM), ignore.case = TRUE),]}) 
+                #remove miR-4511/4510
+                TargetCPM_2<-lapply(TargetCPM_1, function(x) {x[!(rownames(x) %in% c("hsa-miR-4511", 
+                                                                                     "hsa-miR-4510",
+                                                                                     "hsa-mir-4511",
+                                                                                     "hsa-mir-4510")),]}) 
+                TargetCPM<- as.data.frame(do.call(rbind, TargetCPM_2))
+                TargetCPM<- TargetCPM[,order(colnames(TargetCPM))]
+        
+        #Get percentage of total CPMs that 3 targets make up
+        blocked_CPM<-blocked_CPM[,order(colnames(blocked_CPM))]
+        blocked_TargetPercentageCPM<-TargetCPM/colSums(blocked_CPM) *100
+        
+        #add row with percent mapping to non-target
+        blocked_TargetPercentageCPM["AllOthers" ,] <- 100-colSums(blocked_TargetPercentageCPM)
+```
+
+#Merge blocked/unblocked uncollapsed datasets --> get % mapping to each miR --> plot 
+```{r}
+#Add column for blocked/unblocked to "TargetPercentageCPM" dataframes
+unblocked_TargetPercentageCPM$BlockerStatus<-rep("Unblocked", nrow(unblocked_TargetPercentageCPM))
+blocked_TargetPercentageCPM$BlockerStatus<-rep("Blocked", nrow(blocked_TargetPercentageCPM))
+
+#reformat for plotting
+df_unblocked<-unblocked_TargetPercentageCPM
+df_unblocked$Species<- rownames(df_unblocked)
+df_unblocked_melt<- melt(df_unblocked, by="Species")
+
+df_blocked<-blocked_TargetPercentageCPM
+df_blocked$Species<- rownames(df_blocked)
+df_blocked_melt<- melt(df_blocked, by="Species")
+
+#Add column for ordering
+df_unblocked_melt$Order<- rep(1, nrow(df_unblocked_melt))
+df_blocked_melt$Order<- rep(2, nrow(df_blocked_melt))
+
+#rbind unblocked and blocked dataframes together
+bind_TargetPercentageCPM<- rbind(df_unblocked_melt, df_blocked_melt)
+bind_TargetPercentageCPM$Order<- rep(seq(1,length(unique(bind_TargetPercentageCPM$Species)),1),
+                                     nrow(bind_TargetPercentageCPM)/length(unique(bind_TargetPercentageCPM$Species)))
+bind_TargetPercentageCPM$BlockerStatus<-factor(bind_TargetPercentageCPM$BlockerStatus, levels=c("Unblocked", "Blocked"))
+
+#Plot
+p<-ggplot(bind_TargetPercentageCPM, aes(x = reorder(Species, Order), y =value, fill=BlockerStatus)) +
+        geom_boxplot(size=0.3,color="black",outlier.size = .7)+
+        ylab("Percent of total reads mapping")+
+        xlab("")+
+        theme_classic()+
+        scale_fill_manual("", values=c("Blocked"="firebrick3", "Unblocked"="turquoise3"))+
+        theme(axis.title.y = element_text(face="bold", size=16),
+              axis.text.y = element_text(face="bold", size=12, color="black"),
+              axis.text.x = element_text(face="bold", size=16, color="black", angle=45,hjust=1),
+              legend.text = element_text(face="bold", size=16),
+              legend.title=element_blank(),
+              panel.border = element_rect(colour = "black", fill=NA, size=2),
+              strip.background = element_rect(color = "black", size = 2),
+              legend.position=c(.72,.9),
+              legend.background = element_rect(fill=NA, size=1, linetype="solid", color="black"),
+              axis.ticks = element_line(size = 1.5,color="black"),
+              axis.ticks.length=unit(.2, "cm"))
+```
+
+
+Get significance values for comparing blocked/unblocked in each species
+```{r}
+#Run t.test for all species
+SplitDFBymiR<-split(bind_TargetPercentageCPM, bind_TargetPercentageCPM$Species)
+Ttest<- unlist(lapply(SplitDFBymiR, function(x) {t.test(x[x$BlockerStatus=="Unblocked",4],x[x$BlockerStatus=="Blocked", 4])$p.value}))
+Ttest
+```
+
+Print out mean % mapping for each miR
+```{r}
+GetMeans<-bind_TargetPercentageCPM
+GetMeans$Grouping<-paste(GetMeans$BlockerStatus,"_", GetMeans$Species)
+GetMeans<- GetMeans %>% group_by(Grouping)  %>% mutate(mean=mean(value)) %>% as.data.frame()
+GetMeans[!duplicated(GetMeans$mean),]
+```
+
+
+
+```{r}
+sessionInfo()
+```
+
