@@ -59,6 +59,40 @@ CPMPlot<- function(CPM, Sample){
   
 }
 
+#Plot PCA nicely
+MyPCA<- function(dds, metadata, PC1Variance, PC2Variance,miny, maxy, minx, maxx) {
+  #Normalized (variance stabilized transformation), then run PCA
+  vsd <- varianceStabilizingTransformation(dds, blind=TRUE)
+  PCA<-plotPCA(vsd, intgroup="Batch",returnData=TRUE)
+  PCA$blocker<- metadata$blocker
+  
+  #plot
+  p<- ggplot(PCA, aes(x=PC1, y=PC2, color=Batch, shape=blocker))+
+  geom_point(size=4)+
+  #scale_color_manual(values=Groupcolors)+
+  scale_shape_manual(values=c(16,18))+
+  theme_classic()+
+  ylim(miny,maxy)+
+  xlim(minx,maxx)+
+  ylab(paste("PC2: ", PC2Variance, "% Variance", sep =""))+
+  xlab(paste("PC1: ", PC1Variance, "% Variance", sep =""))+
+  #geom_text(aes(label=Sample),hjust=.5, size= 5,vjust=-1.2, color="black")+
+  theme(axis.text.y   = element_text(size=12, colour = "black", face="bold"),
+        axis.title.y  = element_text(size=14, colour = "black", face="bold"),
+        axis.title.x  = element_text(size=14, colour = "black", face="bold"),
+        axis.text.x  = element_text(size=12, colour = "black", face="bold"),
+        legend.background = element_rect(fill=NA, size=1, 
+                                         linetype="solid", color="black"),
+        legend.title=element_blank(),
+        legend.text = element_text(size=14, face="bold"),
+        legend.key.size = unit(.4, "cm"),
+        legend.spacing.y = unit(0, "mm"),
+        legend.position = c(.9,.85),
+        panel.border = element_rect(colour = "black", fill=NA, size=2)
+        )
+  return(p)
+}
+
 ```
 #Overall Steps:
 
@@ -69,7 +103,7 @@ CPMPlot<- function(CPM, Sample){
 
 ```{r}
 #read in paired data, blocked and unblocked
-wd<-"C:/Users/Jenna/Documents/BlockerProject/"
+wd<-"~/BlockerProject/"
 unblocked_paired<-read.csv(paste(wd, "LargeCohort_PairedSubset_89Samples_Unblocked.csv", sep=""),row.names="X") 
 blocked_paired<-read.csv(paste(wd, "LargeCohort_PairedSubset_89Samples_Blocked.csv", sep=""),row.names="X") 
 
@@ -99,14 +133,25 @@ counts_CPMPass<-counts_collapsed_paired[rownames(counts_collapsed_paired) %in% r
 
 
 #2: Create DESeq2 object, run pair-wise DE on all species
+
 ```{r}
+#Read in batch info, merge with other metadata
+batches<-read.csv(paste(wd, "PairedSample_Batches.csv", sep=""))
+rownames(batches)<-paste(batches$Paired.samples, batches$BlockerStatus,sep="_")
+pairedSamples<-merge(batches, pairedSamples, by=0)
+pairedSamples<-pairedSamples[,c(1,5,4,6)]
+
 #create DESeq2 object- just based on samplegroup (blockerstatus)
 #will add samples to model later (i.e., pairwise analysis)
 pairedSamples$blocker<-as.factor(pairedSamples$blocker)
+pairedSamples$Batch<-as.factor(pairedSamples$Batch) #remove
+pairedSamples$phenoId<-as.factor(pairedSamples$phenoId)
 
 dds<- DESeqDataSetFromMatrix(countData=counts_CPMPass, 
                        colData=pairedSamples, 
                        design=~blocker)
+
+vsd<-varianceStabilizingTransformation(dds)
 
 dds$blocker<- relevel(dds$blocker, ref = "Unblocked")
 
@@ -124,6 +169,13 @@ resOrdered_paired<-res_paired[order(res_paired$padj),]
 nrow(resOrdered_paired[resOrdered_paired$padj<0.05,]) #270 (385 if unpaired, 170 if paired+CPM 75% filter)
 nrow(resOrdered_paired[resOrdered_paired$padj<0.01,]) #244 (295 if unpaired, 154 if paired+CPM 75% filter)
 nrow(resOrdered_paired[resOrdered_paired$padj<0.01 & abs(resOrdered_paired$log2FoldChange)>1,]) #138 (206 if unpaired, 69 if paired+CPM 75% filter)
+```
+
+Plot PCA- coloring by batch effects
+```{r}
+colors<-c("darkgoldenrod4", "darkgoldenrod2","darkcyan", "indianred4", "indianred1","lightblue4", "mediumpurple4",
+          "grey77", "grey35","navy", "red4","darkolivegreen4", "orchid4")
+p<-MyPCA(dds, pairedSamples, 29,13,-8,25,-20,25)+  scale_color_manual(values=colors)
 ```
 
 Export results
@@ -148,7 +200,8 @@ mat<- mat - rowMeans(mat)
 #Heatmap settings
 mat_breaks<- seq(min(mat-MinSubtract), max(mat-MaxSubtract), length.out=75)
 
-metadata<-pairedSamples
+metadata<-pairedSamples[,c(1,2)]
+rownames(metadata)<-metadata$Row.names
 
   #plot heatmap
   p<-pheatmap(mat, breaks = mat_breaks, 
