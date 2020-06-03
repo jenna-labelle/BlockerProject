@@ -47,9 +47,10 @@ Head<-function(x){x[1:10,1:10]}
 
 #1: Read in count matrixes- full cohort and paired cohort- and preprocess by collapsing together mature/isomiR
 ```{r}
-#unpaired, full dataset
-unblocked_counts_Full<-read.csv(paste(wd, "UnblockedRawCounts_TechCollapsed.csv",sep=""),row.names="X") #unpaired full dataset
-blocked_counts_Full<-read.csv(paste(wd, "BlockedRawCounts_TechCollapsed.csv",sep=""),row.names="X") #unpaired full dataset
+#Read in tech collapsed raw counts (full)
+wd<-"~/BlockerProject/"
+unblocked_counts_Full<-read.csv(paste(wd, "LargeCohort_RawData_unblocked_DupsRemoved.csv",sep=""),row.names="X") #unpaired full dataset
+blocked_counts_Full<-read.csv(paste(wd, "LargeCohort_RawData_blocked_DupsRemoved.csv",sep=""),row.names="X") #unpaired full dataset
 
 #paired data, blocked and unblocked
 unblocked_counts_paired<-read.csv(paste(wd, "LargeCohort_PairedSubset_89Samples_Unblocked.csv", sep=""),row.names="X") #paired subset

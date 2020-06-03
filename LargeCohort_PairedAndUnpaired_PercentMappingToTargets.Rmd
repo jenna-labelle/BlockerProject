@@ -33,8 +33,9 @@ windowsFonts("Arial" = windowsFont("Arial"))
 Read in counts (full and paired datasets)
 ```{r}
 #Read in tech collapsed raw counts (full)
-unblocked_Input_Full<-read.csv(paste(wd, "UnblockedRawCounts_TechCollapsed.csv",sep=""),row.names="X") #unpaired full dataset
-blocked_Input_Full<-read.csv(paste(wd, "BlockedRawCounts_TechCollapsed.csv",sep=""),row.names="X") #unpaired full dataset
+wd<-"~/BlockerProject/"
+unblocked_Input_Full<-read.csv(paste(wd, "LargeCohort_RawData_unblocked_DupsRemoved.csv",sep=""),row.names="X") #unpaired full dataset
+blocked_Input_Full<-read.csv(paste(wd, "LargeCohort_RawData_blocked_DupsRemoved.csv",sep=""),row.names="X") #unpaired full dataset
 
 #Read in paired subset
 unblocked_Input_Paired<-read.csv(paste(wd, "LargeCohort_PairedSubset_89Samples_Unblocked.csv", sep=""),row.names="X") #paired subset
