@@ -37,7 +37,7 @@ windowsFonts("Arial" = windowsFont("Arial"))
 
 #1a Read in unblocked data-from multiple folders- and merge into 1
 ```{r}
-unblocked_readwd<-"Z:/Small_RNA/BaseSpace/"
+unblocked_readwd<-"Y:/Small_RNA/BaseSpace/"
 
 #Get filenames needed
 filenames1<-c("Hersh_PT8_Rerun_Small_RNA_11072017_counts",
@@ -76,6 +76,19 @@ for (i in 1:length(filenames)){
 
 ```
 
+#Export sample IDs + batch, to be used later to control for batch effects
+```{r}
+samples=c()
+batches=c()
+
+for (i in 1:length(unblocked_input)){
+        sampleIDs<-paste(colnames(unblocked_input[[1]]), "_Unblocked",sep="")
+        samples=c(samples, sampleIDs)
+        batches=c(batches, rep(paste("Batch_UB", i,sep=""),length(sampleIDs)))}
+        
+ub_batches<-data.frame(samples, batches)
+
+```
 
 Merge into one dataset, filter based on total reads per sample and per miRNA
 ```{r}
@@ -110,9 +123,11 @@ unblocked_collapse<-unblocked_collapse[,-1]
 ```
 
 
+
+
 #1b: Read in blocked data-from multiple folders- and merge into 1. Filter based on read count. Write file out for later use, as this step is computationally intensive.
 ```{r}
-blocked_readwd<-"Z:/COPD/miRNAseq/BaseSpace/"
+blocked_readwd<-"Y:/COPD/miRNAseq/BaseSpace/"
 
 #Get filenames needed
 filenames<-c("21801069331-0_GECOPD_miRNASeq _Small_RNA_11222019_counts",
@@ -131,6 +146,30 @@ for (i in 1:length(filenames)){
 }
 
 ```
+
+#Get batch information. Will be exported for DE, and used to change the sample ID so that it's specific to that sample
+Note: the same sample ID may be used across different batches- need to add batch info to create a unique sample ID
+```{r}
+samples=c()
+batches=c()
+
+for (i in 1:length(blocked_input)){
+        sampleIDs<-paste(colnames(blocked_input[[1]]), "_Blocked",sep="")
+        samples=c(samples, sampleIDs)
+        batches=c(batches, rep(paste("Batch_B", i,sep=""),length(sampleIDs)))}
+        
+b_batches<-data.frame(samples, batches)
+
+#Merge with unblocked batches, remove "X" samples and remove "trimmed"
+batches<-rbind(ub_batches, b_batches)
+batches<-batches[!(grepl("X", batches$samples)),]
+batches$samples<- gsub(paste0(c(".x", ".y", "Trimmed.x", "Trimmed.y", "Trimmed", 
+                                     "trimmed.x", "trimmed.y", "trimmed"), collapse="|"),"", batches$samples)
+
+#export
+write.csv(batches,"~/BlockerProject/SampleBatches.csv")
+```
+
 
 #Merge into one dataset, filter based on total reads per sample and per miRNA
 ```{r}
@@ -166,19 +205,87 @@ rownames(blocked_collapse)<-blocked_collapse$X
 blocked_collapse<-blocked_collapse[,-1]
 ```
 
+#Remove duplicated samples from unblocked samples
+```{r}
+#Read in list of duplicated samples
+wd<-"~/BlockerProject/"
+dups<-read.csv(paste(wd, "DuplicatedSamples_BH.csv",sep=""))
+dups$sampIdPpm<-gsub("-",".", dups$sampIdPpm)
+dups_Unblocked_remove<-dups[dups$blocker==0,]
+dups_Unblocked_remove<-dups_Unblocked_remove[duplicated(dups_Unblocked_remove$phenoId),]
+
+#Remove suffixes from sample IDs and remove duplicated samples
+        #temporarily transpose data
+        trans<-as.data.frame(t(unblocked_collapse))
+        trans$sample<-rownames(trans)
+        
+        #Remove control samples from counts table- only keeping samples named as "S."
+        trans<-trans[grepl("S.",trans$sample),] #removes 2 controls
+        
+        #remove suffixes from sample names
+        trans$sample<- gsub(paste0(c(".x", ".y", "Trimmed.x", "Trimmed.y", "Trimmed", 
+                                     "trimmed.x", "trimmed.y", "trimmed"), collapse="|"),"", trans$sample)
+        
+        #Remove duplicated samples
+        trans<-trans[!(trans$sample %in% dups_Unblocked_remove$sampIdPpm),] #removes 60 samples
+        rownames(trans)<-trans$sample
+        
+        #transpose data back
+        unblocked_retrans<-as.data.frame(t(trans))
+        
+        #Convert to integer
+        unblocked_int<-as.data.frame(apply(unblocked_retrans, 2, as.integer))
+        rownames(unblocked_int)<-rownames(unblocked_retrans)
+        unblocked_int<-na.omit(unblocked_int)
+
+```
+
+#Remove duplicated samples from blocked samples
+```{r}
+#Read in list of duplicated samples
+dups_blocked_remove<-dups[dups$blocker==1,]
+dups_blocked_remove<-dups_blocked_remove[duplicated(dups_blocked_remove$phenoId),]
+
+#Remove suffixes from sample IDs and remove duplicated samples
+        #temporarily transpose data
+        trans<-as.data.frame(t(blocked_collapse))
+        trans$sample<-rownames(trans)
+        
+        #Remove control samples from counts table- only keeping samples named as "S."
+        trans<-trans[grepl("S.",trans$sample),] #removes 3 controls
+        
+        #remove suffixes from sample names
+        trans$sample<- gsub(paste0(c(".x", ".y", "Trimmed.x", "Trimmed.y", "Trimmed", 
+                                     "trimmed.x", "trimmed.y", "trimmed"), collapse="|"),"", trans$sample)
+        
+        #Remove duplicated samples
+        trans<-trans[!(trans$sample %in% dups_blocked_remove$sampIdPpm),] #removes 19 samples
+        rownames(trans)<-trans$sample
+        
+        #transpose data back
+        blocked_retrans<-as.data.frame(t(trans))
+        
+        #Convert to integer
+        blocked_int<-as.data.frame(apply(blocked_retrans, 2, as.integer))
+        rownames(blocked_int)<-rownames(blocked_retrans)
+        blocked_int<-na.omit(blocked_int)
+
+```
+
 
 #write counts to csv for later use
 ```{r}
-wd<-"C:/Users/Jenna/Documents/BlockerProject/"
-write.csv(unblocked_collapse, paste(wd, "LargeCohort_RawData_Unblocked.csv", sep=""))
-write.csv(blocked_collapse, paste(wd, "LargeCohort_RawData_blocked.csv", sep=""))
+wd<-"~/BlockerProject/"
+write.csv(unblocked_int, paste(wd, "LargeCohort_RawData_Unblocked_DupsRemoved.csv", sep=""))
+write.csv(blocked_int, paste(wd, "LargeCohort_RawData_blocked_DupsRemoved.csv", sep=""))
 ```
 
 #2a: Read in filtered/merged unblocked data from step 1 --> Collapse technical replicates --> Write out for later use
+This section now not necessary- duplicates removed in initial processing
 ```{r}
 #read in counts- pre-processing in above chunk
-wd<-"C:/Users/Jenna/Documents/BlockerProject/"
-unblocked_collapse<-read.csv(paste(wd, "LargeCohort_RawData_Unblocked.csv"), row.names = "X")
+wd<-"~/BlockerProject/"
+unblocked_collapse<-read.csv(paste(wd, "LargeCohort_RawData_Unblocked_DupsRemoved.csv", sep=""), row.names = "X")
 
 #Remove any species with < 10 total counts-optional
 unblocked_RemoveLow<- unblocked_collapse[rowSums(unblocked_collapse) >10,]
@@ -212,6 +319,7 @@ rownames(integer_counts)<-rownames(unblocked_Ccounts)
 ```
 
 #2b:  Read in filtered/merged blocked data from step 1 --> Collapse technical replicates --> Write out for later use
+This section now not necessary- duplicates removed in initial processing
 ```{r}
 #red in counts- pre-processing in above chunka
 blocked_collapse<-read.csv( paste(wd, "LargeCohort_RawData_blocked.csv", sep=""), row.names = "X")
@@ -262,11 +370,11 @@ pairedSamples$NewSampleID<- paste(gsub("-", ".",pairedSamples$sampIdPpm),
                                   gsubfn(".", list("0" = "Unblocked", "1" = "Blocked"), as.character(pairedSamples$blocker)),sep="_")
 
 #Read in unblocked raw counts, tech collapsed (generated above) --> change column names like New sample ID above
-unblocked_Counts<- read.csv(paste(wd, "UnblockedRawCounts_TechCollapsed.csv",sep=""))
+unblocked_Counts<- read.csv(paste(wd, "LargeCohort_RawData_Unblocked_DupsRemoved.csv",sep=""))
 colnames(unblocked_Counts)<-paste(colnames(unblocked_Counts), "Unblocked", sep="_")
 
 #Read in blocked raw counts, tech collapsed (generated above) --> change column names like New sample ID above
-blocked_Counts<- read.csv(paste(wd, "BlockedRawCounts_TechCollapsed.csv",sep=""))
+blocked_Counts<- read.csv(paste(wd, "LargeCohort_RawData_Blocked_DupsRemoved.csv",sep=""))
 colnames(blocked_Counts)<-paste(colnames(blocked_Counts), "Blocked", sep="_")
 
 #Subset raw counts to paired samples -89 total pairs
