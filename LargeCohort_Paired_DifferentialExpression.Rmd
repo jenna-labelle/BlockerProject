@@ -29,6 +29,7 @@ CPMPlot<- function(CPM, Sample){
   #Get subset of CPM for labeling points- points that are both sig DE and are higher in unblocked than   blocked (beneath the slope line)
   CPM$HigherInUnblocked<- (CPM$Blocker-CPM$NoBlocker)<0
   SubsetToLabel<- CPM[CPM$HigherInUnblocked=="TRUE" &CPM$Color!="Not DE",]
+  SubsetToLabel<-CPM[rownames(CPM) %in% c("hsa-miR-486", "hsa-miR-92a", "hsa-miR-451a", "hsa-miR-92b", "hsa-miR-25"),]
   
   #Plot
   p<- ggplot(CPM, aes(x=NoBlocker, y=Blocker, color=Color))+
@@ -97,6 +98,7 @@ MyPCA<- function(dds, metadata, PC1Variance, PC2Variance,miny, maxy, minx, maxx)
 #Overall Steps:
 
 1: Read in paired count matrixes and subject IDs of paired samples, merge counts together and collapse mature/isomiRs. Filter based on CPM.
+2. PCA, coloring based on batch- to determine if there are any large batch effects
 2: Create DESeq2 object, run pair-wise DE on all species and plot heatmap
 3: Create DESeq2 object, run pair-wise DE on NON-TARGET species (miR-486/miR-451a/miR-92a/miR-92b/miR-25 removed priot to DE)
 4: Get off targets (From targets included DESeq2, step 2), plot. Export potential off-targets to csv.
@@ -130,12 +132,9 @@ CPM_Above1<- CPM[apply(CPM, 1, function(x) {sum(x>=1)})>(ncol(CPM)*.75),]
 counts_CPMPass<-counts_collapsed_paired[rownames(counts_collapsed_paired) %in% rownames(CPM_Above1),]
 ```
 
-
-
-#2: Create DESeq2 object, run pair-wise DE on all species
-
+#2. PCA, coloring based on batch- to determine if there are any large batch effects
 ```{r}
-#Read in batch info, merge with other metadata
+#Read in batch info, merge with other metadata- for PCA plotting
 batches<-read.csv(paste(wd, "PairedSample_Batches.csv", sep=""))
 rownames(batches)<-paste(batches$Paired.samples, batches$BlockerStatus,sep="_")
 pairedSamples<-merge(batches, pairedSamples, by=0)
@@ -151,7 +150,75 @@ dds<- DESeqDataSetFromMatrix(countData=counts_CPMPass,
                        colData=pairedSamples, 
                        design=~blocker)
 
-vsd<-varianceStabilizingTransformation(dds)
+colors<-c("darkgoldenrod4", "darkgoldenrod2","darkcyan", "indianred4", "indianred1","lightblue4", "mediumpurple4",
+          "grey77", "grey35","navy", "red4","darkolivegreen4", "orchid4")
+p<-MyPCA(dds, pairedSamples, 29,13,-8,25,-20,25)+  scale_color_manual(values=colors)
+```
+
+Samples do not cluster by batch EXCEPT for batch 12 (blocked, miRNA FC 5)
+
+What's different about batch 12? Read in QC information, compare metrics for batch 12 vs the other blocked batches
+```{r}
+#Read in QC info
+qc<-read.csv("~/BlockerProject/QCInfo_PairedBlockedSamples.csv")
+
+#Subset down to metrics of interest
+qc_plot<-qc[,c(1,4,7,10,12,14)]
+
+#Plot all
+apply(qc_plot[,3:6], 2, function(x){ggplot(qc_plot, aes(x=Group, y=x))+geom_boxplot()+ylab(x)})
+
+t.test(qc_plot[qc_plot$Group=="Non-outliers (Batches 8-11)",4],qc_plot[qc_plot$Group=="Outliers (Batch 12)",4])
+t.test(qc_plot[qc_plot$Group=="Non-outliers (Batches 8-11)",5],qc_plot[qc_plot$Group=="Outliers (Batch 12)",5])
+
+#Only one metric is significantly different- %genome. Speaks to extraction quality, possibily. Plot and export for use as supplemental figure
+p<-ggplot(qc_plot, aes(x=Group, y=PercentGenome))+ 
+  geom_boxplot(fill="grey")+
+  theme_classic()+
+  xlab("")+
+  ylab("Percent Genomic DNA")+
+  scale_y_continuous(breaks=seq(0,15,2), labels=paste(seq(0,15,2), "%", sep=""))+
+  theme(axis.title.y=element_text(size=16, face="bold"),
+        axis.text.y=element_text(size=12, face="bold", color="black"),
+        axis.text.x=element_text(size=14, face="bold", angle=30, hjust=.95, color="black"),
+        panel.border = element_rect(colour = "black", fill=NA, size=2))
+  
+  
+```
+#Remove outliers (paired samples in batch 12) AND the paired sample of those outliers before proceeding with DE
+```{r}
+#Get list of samples to remove
+outliers<-qc[qc$Group=="Outliers (Batch 12)",]
+outliers$Row.names<-paste(outliers$Paired.samples, outliers$BlockerStatus, sep="_")
+outliers<-merge(outliers, pairedSamples, by="Row.names")
+AllOutliers<-pairedSamples[pairedSamples$phenoId %in% outliers$phenoId,1]
+
+#Remove outliers + their unblocked pair from count matrix
+counts_OutliersRemoved<- counts_CPMPass[,!(colnames(counts_CPMPass) %in% AllOutliers)]
+```
+
+#3: Create DESeq2 object, run pair-wise DE on all species
+
+create metadata- need to remove all the outlier samples
+```{r}
+#Read in paired samples- From BH. Add column for new sampleID- "sampleIDppm_Blocked/Unblocked". Needed since some sample IDs are replicated between blocked/unblocked. 
+pairedSamples<-read.csv(paste(wd, "PairedSamples_LargeCohort_FromBH.csv", sep=""), row.names = "UniqueID")
+pairedSamples<-pairedSamples[,-1]
+
+pairedSamples_OutliersRemoved<-pairedSamples[!(pairedSamples$phenoId %in% outliers$phenoId),]
+pairedSamples_OutliersRemoved$blocker<-as.factor(pairedSamples_OutliersRemoved$blocker)
+pairedSamples_OutliersRemoved$phenoId<-as.factor(pairedSamples_OutliersRemoved$phenoId)
+
+
+```
+
+
+```{r}
+#create DESeq2 object- just based on samplegroup (blockerstatus)
+#will add samples to model later (i.e., pairwise analysis)
+dds<- DESeqDataSetFromMatrix(countData=counts_OutliersRemoved, 
+                       colData=pairedSamples_OutliersRemoved, 
+                       design=~blocker)
 
 dds$blocker<- relevel(dds$blocker, ref = "Unblocked")
 
@@ -166,16 +233,9 @@ dds<- DESeq(ddsMF)
 res_paired<-na.omit(results(dds))
 resOrdered_paired<-res_paired[order(res_paired$padj),]
 
-nrow(resOrdered_paired[resOrdered_paired$padj<0.05,]) #270 (385 if unpaired, 170 if paired+CPM 75% filter)
-nrow(resOrdered_paired[resOrdered_paired$padj<0.01,]) #244 (295 if unpaired, 154 if paired+CPM 75% filter)
-nrow(resOrdered_paired[resOrdered_paired$padj<0.01 & abs(resOrdered_paired$log2FoldChange)>1,]) #138 (206 if unpaired, 69 if paired+CPM 75% filter)
-```
-
-Plot PCA- coloring by batch effects
-```{r}
-colors<-c("darkgoldenrod4", "darkgoldenrod2","darkcyan", "indianred4", "indianred1","lightblue4", "mediumpurple4",
-          "grey77", "grey35","navy", "red4","darkolivegreen4", "orchid4")
-p<-MyPCA(dds, pairedSamples, 29,13,-8,25,-20,25)+  scale_color_manual(values=colors)
+nrow(resOrdered_paired[resOrdered_paired$padj<0.05,]) #270 (385 if unpaired, 170 if paired+CPM 75% filter, 168 if outliers removed)
+nrow(resOrdered_paired[resOrdered_paired$padj<0.01,]) #244 (295 if unpaired, 154 if paired+CPM 75% filter, 165 if outliers removed)
+nrow(resOrdered_paired[resOrdered_paired$padj<0.01 & abs(resOrdered_paired$log2FoldChange)>1,]) #138 (206 if unpaired, 69 if paired+CPM 75% filter, 74 if outliers removed)
 ```
 
 Export results
@@ -200,8 +260,8 @@ mat<- mat - rowMeans(mat)
 #Heatmap settings
 mat_breaks<- seq(min(mat-MinSubtract), max(mat-MaxSubtract), length.out=75)
 
-metadata<-pairedSamples[,c(1,2)]
-rownames(metadata)<-metadata$Row.names
+metadata<-pairedSamples_OutliersRemoved[,c(1,2)]
+#rownames(metadata)<-metadata$Row.names
 
   #plot heatmap
   p<-pheatmap(mat, breaks = mat_breaks, 
@@ -220,7 +280,7 @@ Using count matrix that has been filtered to remove lowly expressed species (<50
 
 ```{r}
 #Subset counts matrix, removing 3 targets
-counts_collapsed_paired_RAT<- counts_CPMPass[!(rownames(counts_CPMPass) %in% c("hsa-miR-486",
+counts_collapsed_paired_RAT<- counts_OutliersRemoved[!(rownames(counts_OutliersRemoved) %in% c("hsa-miR-486",
                                                                                 "hsa-miR-451a",
                                                                                 "hsa-miR-92a",
                                                                                 "hsa-miR-92b",
@@ -230,7 +290,7 @@ counts_collapsed_paired_RAT<- counts_CPMPass[!(rownames(counts_CPMPass) %in% c("
 #create DESeq2 object- just based on samplegroup (blockerstatus)
 #will add samples to model later (i.e., pairwise analysis)
 dds<- DESeqDataSetFromMatrix(countData=counts_collapsed_paired_RAT, 
-                       colData=pairedSamples, 
+                       colData=pairedSamples_OutliersRemoved, 
                        design=~blocker)
 dds$blocker<- relevel(dds$blocker, ref = "Unblocked")
 
@@ -263,22 +323,17 @@ Plot heatmap
 
 MinSubtract=0
 MaxSubtract=2
-nspecies=50
+nspecies=100
   #Select top sig DE miRNAs
   topgenes<- rownames(resOrdered_paired_RAT[1:nspecies,])
-  #topgenes<-rownames(sig)
+
   mat<- assay(rld)[topgenes,]
   mat<- mat - rowMeans(mat)
-  #colnames(mat)<-paste(metadata$Patient," (",metadata$sampleGroup, ")",sep="")
   
   #Heatmap settings
   mat_breaks<- seq(min(mat-MinSubtract), max(mat-MaxSubtract), length.out=75)
 
-  #Create metadata- to be used to color code to show which group the sample belongs to
-  #metadata<- data.frame(Group=pairedSamples$blocker, 
-                       #row.names=rownames(pairedSam),
-                        #Sample=metadata$Patient)
-  metadata<-pairedSamples
+  metadata<-pairedSamples_OutliersRemoved
 
   #plot heatmap
   p<-pheatmap(mat, breaks = mat_breaks, 
@@ -295,35 +350,24 @@ nspecies=50
  
 ```{r}
 #Get raw counts- only downsampled + isomirs collapsed. Separate into blocked/unblocked
-counts<-counts_collapsed_paired
+counts<-counts_OutliersRemoved
 Unblocked_counts_collapsed_paired<-counts[,gsub(".*_", "", colnames(counts))=="Unblocked"]
 Blocked_counts_collapsed_paired<-counts[,gsub(".*_", "", colnames(counts))=="Blocked"]
 
 #Get sig DE genes- p<0.01 and baseMean>50
 sig<-resOrdered_paired[resOrdered_paired$padj<0.01,]
 sig<-sig[sig$baseMean>=50,]
-sig<- sig[abs(sig$log2FoldChange)>=1,] #53, 101 if set at 0.5
+sig<- sig[abs(sig$log2FoldChange)>=0,] #53, 101 if set at 0.5
 
-#Add in CPM data for these miRNAs- across all 16 libraries
+#Add in CPM data for these miRNAs
         #Convert to CPM
         counts_cpm<- (counts/colSums(counts)) *1000000
         
-        #Get CPM for blocked and unblocked for sig miRs
-        Unblocked_SigCPM<- as.data.frame(rowMeans(Unblocked_counts_collapsed_paired[rownames(Unblocked_counts_collapsed_paired) 
-                                                                                    %in% rownames(sig),]))
-        Blocked_SigCPM<- as.data.frame(rowMeans(Blocked_counts_collapsed_paired[rownames(Blocked_counts_collapsed_paired) 
-                                                                                %in% rownames(sig),]))
-        
         #Merge with DE data, reformat
-        OT<- merge(as.data.frame(sig[,c(1,2,6)]), Unblocked_SigCPM, by=0)
-        rownames(OT)<-OT$Row.names
-        OT<- merge(OT, Blocked_SigCPM, by=0)
-        OT<-OT[,-1]
-        colnames(OT)<- c("Species", "baseMean", "log2FoldChange", "padj", "MeanCPMUnblockedCounts", "MeanCPMBlockedCounts")
+        OT<- merge(as.data.frame(sig[,c(1,2,6)]), rowMeans(counts_cpm), by=0)
+        colnames(OT)<- c("Species", "baseMean", "log2FoldChange", "padj", "MeanCPM")
+        OT$Species<- gsub("hsa-", "", OT$Species)
 
-#Get mean of CPM- used for plotting- and reformat species name
-OT$MeanCPM<- rowMeans(OT[,5:6])
-OT$Species<-gsub("hsa-", "", OT$Species)
 
 #Annotate by whether species is a target miR
 ActualTargets<- c('miR-486-5p','miR-92a-3p','miR-451a') #CL
@@ -339,7 +383,7 @@ TargetFamilies<- gsub("hsa-", "", c(Target_451,Target_486,Target_92, Target_25))
 
 #Add family info in
 OT$TargetFamily<- OT$Species %in% TargetFamilies
-OT$Color<- as.factor(rowSums(OT[,c(8,9)]))
+OT$Color<- as.factor(rowSums(OT[,c(6,7)]))
 OT$Color<- gsub(0, "Non-Target miR", OT$Color)
 OT$Color<- gsub(1, "miR in Target Family", OT$Color)
 OT$Color<- gsub(2, "Target miR", OT$Color)
@@ -352,7 +396,7 @@ SubsetToLabel$Species<- gsub("hsa-", "", SubsetToLabel$Species)
 
 Write results to csv
 ```{r}
-write.csv(OT, paste(wd,"OffTargetStats_PairedCohort_PairwiseDESeq2_TargetsIncluded_75CPMFilter.csv", sep=""))
+write.csv(OT, paste(wd,"OffTargetStats_PairedCohort_OutliersRemoved_PairwiseDESeq2_TargetsIncluded_75CPMFilter.csv", sep=""))
 ```
 
 Plot off target effects- same as in figure 3A
@@ -360,24 +404,24 @@ Plot off target effects- same as in figure 3A
 #plot
 p<-ggplot(OT,aes(x=log2FoldChange, y= log2(padj+1e-100), fill=Color))+
   geom_point(aes(size=MeanCPM), pch=21, color="black")+
-  scale_size_continuous(range = c(1, 50), guide=FALSE)+
-  #scale_x_continuous(limits=c(-6,6),n.breaks = 7)+
-  #scale_y_continuous(limits = c(-0.008, .05))+
+  scale_size_continuous(range = c(1, 50),guide=FALSE )+
+  ylim(-350,50)+
+  xlim(-6, 3)+
   theme_classic()+
   xlab("log2 foldchange of differential expression")+
   ylab("Log2(Adjusted p value)")+
   geom_vline(xintercept=0,linetype="dotted", color= "black", size=1.25)+
   guides(colour = guide_legend(override.aes = list(size=5)))+
-  geom_text_repel(data=SubsetToLabel, aes(x=log2FoldChange, y=padj, 
+  geom_text_repel(data=SubsetToLabel, aes(x=log2FoldChange, y=log2(padj+1e-100), 
                                           label=Species),
-                                          size=3.5, fontface= "bold",
+                                          size=5, fontface= "bold",
                                           nudge_y = 0.0035, point.padding = 1.7, 
                                           box.padding = 0.5)+
   scale_fill_manual(values=c("orange","black", "red"))+
-  theme(axis.text.y   = element_text(size=12, face= "bold", colour = "black"),
-        axis.title.y  = element_text(size=16, face= "bold", colour = "black"),
-        axis.title.x  = element_text(size=16, face="bold", colour = "black"),
-        axis.text.x  = element_text(size=12, face="bold", colour = "black"),
+  theme(axis.text.y   = element_text(size=15, face= "bold", colour = "black"),
+        axis.title.y  = element_text(size=18, face= "bold", colour = "black"),
+        axis.title.x  = element_text(size=18, face="bold", colour = "black"),
+        axis.text.x  = element_text(size=15, face="bold", colour = "black"),
         legend.background = element_rect(fill=NA, size=1, 
                                          linetype="solid", color="black"),
         legend.title=element_blank(),
@@ -396,7 +440,7 @@ p
 #5: Plot log2 CPM values for blocked and unblocked datasets, coloring based on sig (from pairwise targets included analysis)
 ```{r}
 #Convert to CPM
-CPM<- counts_collapsed_paired/colSums(counts_collapsed_paired) *1000000
+CPM<- counts_OutliersRemoved/colSums(counts_OutliersRemoved) *1000000
 
 #Get mean CPM for blocked and unblocked for every species
 blockedSamples<-pairedSamples[pairedSamples$blocker=="Blocked",]

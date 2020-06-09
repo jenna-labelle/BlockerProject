@@ -82,11 +82,12 @@ samples=c()
 batches=c()
 
 for (i in 1:length(unblocked_input)){
-        sampleIDs<-paste(colnames(unblocked_input[[1]]), "_Unblocked",sep="")
+        sampleIDs<-paste(colnames(unblocked_input[[i]]), "_Unblocked",sep="")
         samples=c(samples, sampleIDs)
         batches=c(batches, rep(paste("Batch_UB", i,sep=""),length(sampleIDs)))}
         
 ub_batches<-data.frame(samples, batches)
+ub_batches<-ub_batches[!(grepl("X", ub_batches$samples)),]
 
 ```
 
@@ -137,6 +138,7 @@ filenames<-c("21801069331-0_GECOPD_miRNASeq _Small_RNA_11222019_counts",
              "21801069331-0_GECOPD_miRNASeq _Small_RNA_12112019_counts",
              "24200081892-6_GECOPD_P6_miRNASeq _Small_RNA_03092020_counts")
 
+
 #Read in files
 blocked_input<-list()
 for (i in 1:length(filenames)){
@@ -154,17 +156,18 @@ samples=c()
 batches=c()
 
 for (i in 1:length(blocked_input)){
-        sampleIDs<-paste(colnames(blocked_input[[1]]), "_Blocked",sep="")
+        sampleIDs<-paste(colnames(blocked_input[[i]]))
         samples=c(samples, sampleIDs)
         batches=c(batches, rep(paste("Batch_B", i,sep=""),length(sampleIDs)))}
         
-b_batches<-data.frame(samples, batches)
 
-#Merge with unblocked batches, remove "X" samples and remove "trimmed"
+b_batches<-data.frame(samples, batches)
+b_batches<-b_batches[!(grepl("X", b_batches$samples)),]
+
+#Merge with unblocked batches
 batches<-rbind(ub_batches, b_batches)
-batches<-batches[!(grepl("X", batches$samples)),]
-batches$samples<- gsub(paste0(c(".x", ".y", "Trimmed.x", "Trimmed.y", "Trimmed", 
-                                     "trimmed.x", "trimmed.y", "trimmed"), collapse="|"),"", batches$samples)
+batches$samples<-gsub("Trimmed", "", batches$samples)
+batches$samples<-gsub("trimmed", "", batches$samples)
 
 #export
 write.csv(batches,"~/BlockerProject/SampleBatches.csv")
