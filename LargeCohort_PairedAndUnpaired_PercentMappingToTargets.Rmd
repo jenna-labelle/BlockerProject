@@ -289,7 +289,7 @@ p<-ggplot(bind_TargetPercentageCPM, aes(x = reorder(Species, Order), y =value, f
         xlab("")+
         theme_classic()+
         scale_fill_manual("", values=c("Blocked"="firebrick3", "Unblocked"="turquoise3"))+
-        theme(axis.title.y = element_text(face="bold", size=16),
+        theme(axis.title.y = element_text(face="bold", size=18),
               axis.text.y = element_text(face="bold", size=12, color="black"),
               axis.text.x = element_text(face="bold", size=16, color="black", angle=45,hjust=1),
               legend.text = element_text(face="bold", size=16),
