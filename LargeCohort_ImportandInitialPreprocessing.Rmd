@@ -138,6 +138,14 @@ filenames<-c("21801069331-0_GECOPD_miRNASeq _Small_RNA_11222019_counts",
              "21801069331-0_GECOPD_miRNASeq _Small_RNA_12112019_counts",
              "24200081892-6_GECOPD_P6_miRNASeq _Small_RNA_03092020_counts")
 
+#Get filenames needed
+filenames<-c("21801069331-0_GECOPD_miRNASeq _Small_RNA_11222019_counts",
+             "21801069331-0_GECOPD_miRNASeq _Small_RNA_12032019_counts",
+             "21801069331-0_GECOPD_miRNASeq _Small_RNA_12042019_counts",
+             "21801069331-0_GECOPD_miRNASeq _Small_RNA_12102019_counts",
+             "24200081892-6_GECOPD_P6_miRNASeq _Small_RNA_03092020_counts")
+
+
 
 #Read in files
 blocked_input<-list()
