@@ -37,7 +37,7 @@ windowsFonts("Arial" = windowsFont("Arial"))
 
 #1a Read in unblocked data-from multiple folders- and merge into 1
 ```{r}
-unblocked_readwd<-"Y:/Small_RNA/BaseSpace/"
+unblocked_readwd<-"//Cifs2/rcdata$/Small_RNA/BaseSpace/"
 
 #Get filenames needed
 filenames1<-c("Hersh_PT8_Rerun_Small_RNA_11072017_counts",
@@ -128,7 +128,7 @@ unblocked_collapse<-unblocked_collapse[,-1]
 
 #1b: Read in blocked data-from multiple folders- and merge into 1. Filter based on read count. Write file out for later use, as this step is computationally intensive.
 ```{r}
-blocked_readwd<-"Y:/COPD/miRNAseq/BaseSpace/"
+blocked_readwd<-"//Cifs2/rcdata$/COPD/miRNAseq/BaseSpace/"
 
 #Get filenames needed
 filenames<-c("21801069331-0_GECOPD_miRNASeq _Small_RNA_11222019_counts",
@@ -211,7 +211,7 @@ blocked_collapse<-blocked_collapse[,-1]
 #Remove duplicated samples from unblocked samples
 ```{r}
 #Read in list of duplicated samples
-wd<-"~/BlockerProject/"
+wd<-"C:/Users/jjl71/Documents/Github/BlockerProject_Updated/"
 dups<-read.csv(paste(wd, "DuplicatedSamples_BH.csv",sep=""))
 dups$sampIdPpm<-gsub("-",".", dups$sampIdPpm)
 dups_Unblocked_remove<-dups[dups$blocker==0,]
@@ -372,16 +372,23 @@ pairedSamples<-read.csv(paste(wd, "PairedSamples_LargeCohort_FromBH.csv", sep=""
 pairedSamples$NewSampleID<- paste(gsub("-", ".",pairedSamples$sampIdPpm), 
                                   gsubfn(".", list("0" = "Unblocked", "1" = "Blocked"), as.character(pairedSamples$blocker)),sep="_")
 
-#Read in unblocked raw counts, tech collapsed (generated above) --> change column names like New sample ID above
-unblocked_Counts<- read.csv(paste(wd, "LargeCohort_RawData_Unblocked_DupsRemoved.csv",sep=""))
-colnames(unblocked_Counts)<-paste(colnames(unblocked_Counts), "Unblocked", sep="_")
 
 #Read in blocked raw counts, tech collapsed (generated above) --> change column names like New sample ID above
 blocked_Counts<- read.csv(paste(wd, "LargeCohort_RawData_Blocked_DupsRemoved.csv",sep=""))
 colnames(blocked_Counts)<-paste(colnames(blocked_Counts), "Blocked", sep="_")
 
-#Subset raw counts to paired samples -89 total pairs
-paired_unblocked<-unblocked_Counts[,colnames(unblocked_Counts) %in% pairedSamples$NewSampleID]
+
+#Read in unblocked raw counts, tech collapsed (generated above) --> change column names like New sample ID above
+unblocked_Counts<- read.csv(paste(wd, "LargeCohort_RawData_Unblocked_DupsRemoved.csv",sep=""))
+colnames(unblocked_Counts)<-paste(colnames(unblocked_Counts), "Unblocked", sep="_")
+
+#Subset unblocked to only keep with pheno ID found in blocked
+blocked_phenoID<- pairedSamples[ pairedSamples$UniqueID%in% colnames(blocked_Counts),3]
+unblocked_UniqueID<-pairedSamples[pairedSamples$phenoId %in% blocked_phenoID, 4]
+unblocked_Counts<-unblocked_Counts[,colnames(unblocked_Counts) %in% unblocked_UniqueID]
+
+#Subset raw counts to paired samples -75 total pairs
+paired_unblocked<-unblocked_Counts
 rownames(paired_unblocked)<- unblocked_Counts$X_Unblocked
 paired_blocked<-blocked_Counts[,colnames(blocked_Counts) %in% pairedSamples$NewSampleID]
 rownames(paired_blocked)<- blocked_Counts$X_Blocked
