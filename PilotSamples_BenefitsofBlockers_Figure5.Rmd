@@ -89,7 +89,8 @@ CollapseAandB<-function(counts){
 Two input data options: pilot data from CL miRDeep2 analysis or pilot data from BaseSpace miRDeep2. Basespace data used for final figure
 ```{r}
 #Read in raw couns from default CL miRDeep2 
-countsInput<- read.csv("C:/Users/Jenna/Documents/BlockerProject/miRNA_CLmiRDeep2Results_AllSamples_DefaultmiRDeep2Settings.csv")
+wd<- "D:/AsusFiles/BlockerProject/"
+countsInput<- read.csv(paste(wd,"miRNA_CLmiRDeep2Results_AllSamples_DefaultmiRDeep2Settings.csv",sep=""))
 rownames(countsInput)<-countsInput$X
 countsInput<- countsInput[,-1]
 countsInput<- countsInput[,c(1,3,5,7,9,11,13,15,2,4,6,8,10,12,14,16)]
@@ -103,7 +104,6 @@ rownames(counts)<- rownames(countsInput)
 rownames(counts)<- gsub("hsa-", "", rownames(counts))
 
 #Read in raw counts from Basespace- mature and isomir
-wd<- "C:/Users/Jenna/Documents/BlockerProject/"
 BaseSpace_countsInput<- read.delim(paste(wd, "mirna-blocker_bs_mature-isomirs_raw.txt", sep =""))
 rownames(BaseSpace_countsInput)<- BaseSpace_countsInput$ID
 BaseSpace_counts<-BaseSpace_countsInput[,c(4:ncol(BaseSpace_countsInput))]
