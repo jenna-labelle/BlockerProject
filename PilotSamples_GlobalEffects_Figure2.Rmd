@@ -24,6 +24,7 @@ suppressPackageStartupMessages(library(colorRamps))
 suppressPackageStartupMessages(library(plyr))
 suppressPackageStartupMessages(library(ggrepel))
 suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(pvclust))
 windowsFonts("Arial" = windowsFont("Arial"))
 ```
 
@@ -151,7 +152,8 @@ PlotHeatmap<- function(OrderedResults, rld, metadata, nspecies, MinSubtract, Max
                                C="skyblue3", 
                                D="darkolivegreen4")),
             fontsize_row = fontsize,fontsize=12,treeheight_row=0,
-            border_color= NA)
+            border_color= NA,
+            clustering_distance_cols = "euclidean")
   return(p)
 }
 
@@ -227,7 +229,8 @@ CollapseAandB<-function(counts){
 Two input data options: pilot data from CL miRDeep2 analysis or pilot data from BaseSpace miRDeep2. Basespace data used for final figure
 ```{r}
 #Read in raw couns from default CL miRDeep2 
-countsInput<- read.csv("C:/Users/Jenna/Documents/BlockerProject/miRNA_CLmiRDeep2Results_AllSamples_DefaultmiRDeep2Settings.csv")
+wd<- "D:/AsusFiles/BlockerProject/"
+countsInput<- read.csv(paste(wd, "miRNA_CLmiRDeep2Results_AllSamples_DefaultmiRDeep2Settings.csv",sep=""))
 rownames(countsInput)<-countsInput$X
 countsInput<- countsInput[,-1]
 countsInput<- countsInput[,c(1,3,5,7,9,11,13,15,2,4,6,8,10,12,14,16)]
@@ -241,7 +244,6 @@ rownames(counts)<- rownames(countsInput)
 rownames(counts)<- gsub("hsa-", "", rownames(counts))
 
 #Read in raw counts from Basespace- mature and isomir
-wd<- "C:/Users/Jenna/Documents/BlockerProject/"
 BaseSpace_countsInput<- read.delim(paste(wd, "mirna-blocker_bs_mature-isomirs_raw.txt", sep =""))
 rownames(BaseSpace_countsInput)<- BaseSpace_countsInput$ID
 BaseSpace_counts<-BaseSpace_countsInput[,c(4:ncol(BaseSpace_countsInput))]
@@ -528,6 +530,7 @@ sig<- as.data.frame(resOrdered[resOrdered$padj<0.01,]) #26
 #optional- set sig as being padj<0.01 + basemean >50
 sig<-as.data.frame(sig[sig$baseMean>=50,]) #doesn't remove any if using BS counts
 
+
 #normalize results
 rld<- rlog(dds)
 ```
@@ -536,6 +539,22 @@ Plot heatmap
 ```{r}
 p<-PlotHeatmap(resOrdered, rld, metadata, 50, -.2,.9,11)
 ```
+
+
+Plot dendrogram separately (same algorithm used as heatmap) + get au pvalues for clustering
+```{r}
+#Select top sig DE miRNAs
+  topgenes<- rownames(resOrdered[1:50,])
+  mat<- assay(rld)[topgenes,]
+  mat<- mat - rowMeans(mat)
+  colnames(mat)<-paste(metadata$Patient," (",metadata$sampleGroup, ")",sep="")
+  
+set.seed(42)
+fit <- pvclust(mat, method.hclust="ward.D", method.dist="euclidean")
+p<-plot(fit)
+```
+
+
 Samples cluster by blocker status
 
 
@@ -577,6 +596,19 @@ p<-PlotHeatmap(resOrdered, rld, metadata, 50, -.2,1.2,11)
 
 Samples cluster fully by sample type, not by blocker status
 
+
+Plot dendrogram separately (same algorithm used as heatmap) + get au pvalues for clustering
+```{r}
+#Select top sig DE miRNAs
+  topgenes<- rownames(resOrdered[1:50,])
+  mat<- assay(rld)[topgenes,]
+  mat<- mat - rowMeans(mat)
+  colnames(mat)<-paste(metadata$Patient," (",metadata$sampleGroup, ")",sep="")
+  
+set.seed(42)
+fit <- pvclust(mat, method.hclust="ward.D", method.dist="euclidean")
+p<-plot(fit)
+```
 
 
 #4: Log2 of CPM for each miRNA, comparing blocked vs unblocked values (Figure 2D)
