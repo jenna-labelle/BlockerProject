@@ -6,7 +6,10 @@
 2. 901 samples from large cohort of whole blood samples- 150 paired, extracted/sequenced in 11 batches
 
 
-This analysis is split into 4 major steps corresponding to Figures 2-5:
+Prior to the analysis performed here, small RNA library construction was performed for all RNA samples. Libraries were sequenced on a HiSeq 2500, followed by standard adapter trimming, Bowtie2 alignment to hg19, and count matrix generation. All preprocessing was performed using the BaseSpace Sequencing Hub Small RNA App.
+
+
+## This analysis is split into 4 major steps corresponding to Figures 2-5:
 
 **1. Effect of blocking oligos on target detection (Figure 2)**
 
@@ -34,5 +37,3 @@ This analysis is split into 4 major steps corresponding to Figures 2-5:
     a. Increase in number of low count species in blocked libraries
     b. Pilot only: increased DE sensitivity in blocked libraries
 
-
-Each main step is performed for both the pilot samples and the large cohort, for a total of 8 files describing these analyses. 
