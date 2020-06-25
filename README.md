@@ -11,11 +11,8 @@ This analysis is split into 4 major steps corresponding to Figures 2-5:
 **1. Effect of blocking oligos on target detection (Figure 2)**
 
     a. Percent of total reads mapping to any of the 3 targets
-    
     b. Percent of total reads mapping to each of the 3 targets
-    
     c. Percent of total reads mapping to each of the 3 targets OR their precursors/isomiRs
-    
     
 **2. Impact of blocking oligos on global miRNA expression patterns (Figure 3)**
 
