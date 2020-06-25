@@ -61,15 +61,21 @@ My_ANOVA<- function(PM){
 Two input data options: pilot data from CL miRDeep2 analysis or pilot data from BaseSpace miRDeep2. Basespace data used for final figure
 ```{r}
 #Read in raw couns from default CL miRDeep2 
-countsInput<- read.csv("C:/Users/Jenna/Documents/BlockerProject/miRNA_CLmiRDeep2Results_AllSamples_DefaultmiRDeep2Settings.csv")
+wd<- "D:/AsusFiles/BlockerProject/"
+countsInput<- read.csv(paste(wd, "miRNA_CLmiRDeep2Results_AllSamples_DefaultmiRDeep2Settings.csv",sep=""))
 rownames(countsInput)<-countsInput$X
 countsInput<- countsInput[,-1]
 countsInput<- countsInput[,c(1,3,5,7,9,11,13,15,2,4,6,8,10,12,14,16)]
 colnames(countsInput)<- c(paste(c("A:low", "A:medium", "A:high", "B:low", "B:medium", "B:high", "C", "D"), "-Unblocked",sep=""),
                           paste( c("A:low", "A:medium", "A:high","B:low", "B:medium", "B:high", "C", "D"), "-Blocked",sep="" ))
 
+
+#Convert values to integer
+counts<-as.data.frame(apply(countsInput, 2, as.integer))
+rownames(counts)<- rownames(countsInput)
+rownames(counts)<- gsub("hsa-", "", rownames(counts))
+
 #Read in raw counts from Basespace- mature and isomir
-wd<- "C:/Users/Jenna/Documents/BlockerProject/"
 BaseSpace_countsInput<- read.delim(paste(wd, "mirna-blocker_bs_mature-isomirs_raw.txt", sep =""))
 rownames(BaseSpace_countsInput)<- BaseSpace_countsInput$ID
 BaseSpace_counts<-BaseSpace_countsInput[,c(4:ncol(BaseSpace_countsInput))]
@@ -87,22 +93,22 @@ colnames(BaseSpace_counts)<- c(paste(c("A:low", "A:medium", "A:high", "B:low", "
         BaseSpace_collapsed<-BaseSpace_collapsedInput %>% group_by(geneIDs) %>% summarise_each(funs(sum)) %>% as.data.frame
         rownames(BaseSpace_collapsed)<-BaseSpace_collapsed$geneIDs
         BaseSpace_collapsed<- BaseSpace_collapsed[,2:ncol(BaseSpace_collapsed)]
+        rownames(BaseSpace_collapsed)<- gsub("hsa-", "", rownames(BaseSpace_collapsed))
 
 #Set the input matrix to be used
-countsInput<-BaseSpace_counts
+countsInput<-BaseSpace_collapsed
+
+#Downsample to common depth
+counts<- downsample.counts(countsInput, set.seed(42)) #9,989,167 lowest B.570.0 /7.97 million for basespace
 ```
 
-Downsample to common depth
-```{r}
-counts<- downsample.counts(countsInput, set.seed(42)) #9,989,167 lowest B.570.0 / 7,970,014 in BaseSpace  (C-blocked)
-```
 
 
 #2. Get proportion mapping to any target --> mean % across unblocked/blocked --> plot (Supplemental Figure 1A)
 ```{r}
 #Get raw, downsampled counts for all 3 targets for al 16 samples
         #MapAnyTarget<- counts[rownames(counts) %in% c("hsa-miR-92a-3p", "hsa-miR-451a", "hsa-miR-486-5p"),] #for CL
-        MapAnyTarget<- counts[rownames(counts) %in% c("hsa-miR-92a", "hsa-miR-451a", "hsa-miR-486"),] #for basespace collapsed
+        MapAnyTarget<- counts[rownames(counts) %in% c("miR-92a", "miR-451a", "miR-486"),] #for basespace collapsed
 
 #Get percentage of total for all 3 counts for all 16 samples 
 PercentMapTo3Targets<- MapAnyTarget/colSums(counts) * 100
@@ -228,7 +234,7 @@ c_counts<-downsample.counts(CollapsedCounts)
 
 #Get raw, downsampled counts for all 3 targets for al 16 samples
         #c_MapAnyTarget<- c_counts[rownames(c_counts) %in% c("hsa-miR-92a-3p", "hsa-miR-451a", "hsa-miR-486-5p"),] #for CL
-        c_MapAnyTarget<- c_counts[rownames(c_counts) %in% c("hsa-miR-92a", "hsa-miR-451a", "hsa-miR-486"),] #For BaseSpace collapsed
+        c_MapAnyTarget<- c_counts[rownames(c_counts) %in% c("miR-92a", "miR-451a", "miR-486"),] #For BaseSpace collapsed
 
 #Get percentage of total for all 3 counts for all 16 samples 
 c_PercentMapTo3Targets<- c_MapAnyTarget/colSums(c_counts) * 100
@@ -283,6 +289,64 @@ rowMeans(MapReduction[,9:12])
 #92a reduced by 74% / BS: 76
 
 ```
+Calculate odds ratio
+```{r}
+#Reformat
+OR<- PM_melt
+OR$BlockerStatus<-gsub(".*-", "", OR$variable)
+OR$Group<-paste(OR$species, OR$BlockerStatus, sep="_")
+OR<-OR[c(1:18,21:24),]
+OR_mean<- OR %>% group_by(Group) %>% mutate(bad=mean(value)) %>% as.data.frame()
+OR_mean<-OR_mean[!(duplicated(OR_mean$Group)),]
+OR_mean$good<-100-OR_mean$bad
+rownames(OR_mean)<-OR_mean$Group
+
+
+allORs<-c()
+for (i in seq(1,5,2)){
+  print(i)
+  df<-OR_mean[i:(i+1),9:10]
+  or_fit<-oddsratio(as.matrix(df))
+  allORs[[i]]<-or_fit$measure
+  
+  
+}
+
+allORs
+```
+miR-1301 is highest off target. Calculate odds ratio for its change:
+```{r}
+OTmiRs<-c("miR-1301","miR-25", "miR-92b")
+OTs<-counts[rownames(counts) %in% OTmiRs,]
+OTs<-OTs/colSums(counts)*100
+OT_PM<-data.frame(bad=c(rowMeans(OTs[,c(1:8)]),
+                        rowMeans(OTs[,c(9:16)])),
+                  species=rep(OTmiRs, 2),
+                  BlockerStatus=c(rep("Unblocked", length(OTmiRs)),
+                                  rep("Blocked", length(OTmiRs))))
+OT_PM$good<- 100-OT_PM$bad
+rownames(OT_PM)<-paste(OT_PM$species,OT_PM$BlockerStatus, sep="_")
+OT_PM<-OT_PM[,c(1,4)]*200
+
+
+OT_PM<-OT_PM[order(rownames(OT_PM),decreasing=TRUE),]
+
+
+allOTORs<-c()
+for (i in seq(1,5,2)){
+  print(i)
+  df<-OT_PM[i:(i+1),1:2]
+  or_fit<-oddsratio(as.matrix(df))
+  allOTORs[[i]]<-or_fit$measure
+  
+  
+}
+
+allOTORs
+
+```
+
+
 
 #6: Percent of reads mapping to all 11 mature/isomiRs in target group (Supplemental figure 1E)
 ```{r}
