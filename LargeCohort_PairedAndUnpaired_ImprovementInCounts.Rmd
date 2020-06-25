@@ -143,10 +143,10 @@ p<-ggplot(passThreshold, aes(x=threshold, y=speciesPassingThreshold, color=statu
         scale_y_continuous(breaks=seq(0,600,100))+
         xlab("Counts threshold")+
         ylab("Number of miRs passing counts threshold")+
-        theme(axis.text.x = element_text(size=12,face="bold",color="black"),
-              axis.text.y = element_text(size=12,face="bold",color="black"),
-              axis.title.x = element_text(size=14,face="bold",color="black"),
-              axis.title.y = element_text(size=14,face="bold",color="black"),
+        theme(axis.text.x = element_text(size=14,face="bold",color="black"),
+              axis.text.y = element_text(size=14,face="bold",color="black"),
+              axis.title.x = element_text(size=18,face="bold",color="black"),
+              axis.title.y = element_text(size=18,face="bold",color="black"),
               legend.title=element_blank(),
               legend.text = element_text(size=14, face="bold"),
               legend.position=c(.85,.85),
