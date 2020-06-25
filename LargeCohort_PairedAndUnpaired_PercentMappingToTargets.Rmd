@@ -38,16 +38,16 @@ unblocked_Input_Full<-read.csv(paste(wd, "LargeCohort_RawData_unblocked_DupsRemo
 blocked_Input_Full<-read.csv(paste(wd, "LargeCohort_RawData_blocked_DupsRemoved.csv",sep=""),row.names="X") #unpaired full dataset
 
 #Read in paired subset
-unblocked_Input_Paired<-read.csv(paste(wd, "LargeCohort_PairedSubset_89Samples_Unblocked.csv", sep=""),row.names="X") #paired subset
-blocked_Input_Paired<-read.csv(paste(wd, "LargeCohort_PairedSubset_89Samples_Blocked.csv", sep=""),row.names="X") #paired subset
+unblocked_Input_Paired<-read.csv(paste(wd, "LargeCohort_PairedSubset_75Samples_Unblocked.csv", sep=""),row.names="X") #paired subset
+blocked_Input_Paired<-read.csv(paste(wd, "LargeCohort_PairedSubset_75Samples_Blocked.csv", sep=""),row.names="X") #paired subset
 ```
 
 
 Convert to CPM, calculate % mapping to targets
 ```{r}
 #Set which datasets to use for rest of analysis (paired or full)
-unblocked_Input<-unblocked_Input_Full
-blocked_Input<-blocked_Input_Full
+unblocked_Input<-unblocked_Input_Paired
+blocked_Input<-blocked_Input_Paired
 
 #Unblocked:
         #Convert to CPM
@@ -189,6 +189,31 @@ p<-ggplot(bind_TargetPercentageCPM, aes(x = reorder(Species, Order), y =value, f
               axis.ticks.length=unit(.2, "cm"))
 
 ```
+Calculate odds ratio
+```{r}
+#Reformat
+OR<- bind_TargetPercentageCPM
+OR$Group<-paste(OR$Species, OR$BlockerStatus, sep="_")
+OR_mean<- OR %>% group_by(Group) %>% mutate(bad=mean(value)) %>% as.data.frame()
+OR_mean<-OR_mean[!(duplicated(OR_mean$Group)),]
+OR_mean$good<-100-OR_mean$bad
+rownames(OR_mean)<-OR_mean$Group
+OR_mean<-OR_mean[order(rownames(OR_mean),decreasing=TRUE),]
+
+
+allORs<-c()
+for (i in seq(1,7,2)){
+  print(i)
+  df<-OR_mean[i:(i+1),7:8]
+  or_fit<-oddsratio(as.matrix(df))
+  allORs[[i]]<-or_fit$measure
+  
+  
+}
+
+allORs
+```
+
 
 Get significance values for comparing blocked/unblocked in each species
 ```{r}
@@ -323,5 +348,30 @@ GetMeans[!duplicated(GetMeans$mean),]
 
 ```{r}
 sessionInfo()
+```
+#For paired cohort only- plot the change in percent mapping to each miR
+```{r}
+ForSubtract<-read.csv(paste(wd,"paired_Figure2C.csv", sep=""))
+
+subtract<-ForSubtract %>% group_by(UniqueID) %>% mutate(PercentChange=(BlockedPerMap-UnblockedPerMap)/(max(UnblockedPerMap,BlockedPerMap))*100) %>% as.data.frame
+subtract$Order<-rep(1:4)
+
+p<-ggplot(subtract, aes(y=PercentChange,x=reorder(Species, Order)))+
+  geom_boxplot(fill="grey")+
+  ylab("Percent change in reads mapping to target:\n for each sample pair")+
+  xlab("")+
+  theme_classic()+
+  geom_abline(slope=0, intercept=0,linetype="dotted",size=1)+
+  theme(axis.title.y = element_text(face="bold", size=16),
+        axis.text.y = element_text(face="bold", size=12, color="black"),
+        axis.text.x = element_text(face="bold", size=16, color="black", angle=45,hjust=1),
+        panel.border = element_rect(colour = "black", fill=NA, size=2),
+        strip.background = element_rect(color = "black", size = 2),
+        axis.ticks = element_line(size = 1.5,color="black"),
+        axis.ticks.length=unit(.2, "cm"))
+
+
+#print out means
+test<-subtract%>% group_by(Species) %>% mutate(mean=mean(PercentChange))
 ```
 
