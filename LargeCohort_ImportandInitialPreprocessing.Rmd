@@ -388,16 +388,21 @@ colnames(unblocked_Counts)<-paste(colnames(unblocked_Counts), "Unblocked", sep="
 blocked_Counts<- read.csv(paste(wd, "LargeCohort_RawData_Blocked_DupsRemoved.csv",sep=""))
 colnames(blocked_Counts)<-paste(colnames(blocked_Counts), "Blocked", sep="_")
 
-#Subset raw counts to paired samples -89 total pairs
-paired_unblocked<-unblocked_Counts[,colnames(unblocked_Counts) %in% pairedSamples$NewSampleID]
-rownames(paired_unblocked)<- unblocked_Counts$X_Unblocked
+#Subset raw counts to paired samples -75 total pairs
 paired_blocked<-blocked_Counts[,colnames(blocked_Counts) %in% pairedSamples$NewSampleID]
 rownames(paired_blocked)<- blocked_Counts$X_Blocked
+
+#subset paired down to 75 for unblocked- need to remove the 14 subjects from unblocked that go with the subjects removed from blocked (batch #5)
+Blocked_fullPairSet<-pairedSamples[pairedSamples$NewSampleID %in% colnames(paired_blocked),3]
+Unblocked_fullPairSet<-pairedSamples[pairedSamples$phenoId %in% Blocked_fullPairSet,]
+
+paired_unblocked<-unblocked_Counts[,colnames(unblocked_Counts) %in% Unblocked_fullPairSet$NewSampleID]
+rownames(paired_unblocked)<- unblocked_Counts$X_Unblocked
 ```
 
 #write to csv
 ```{r}
-write.csv(paired_unblocked, paste(wd, "LargeCohort_PairedSubset_89Samples_Unblocked.csv", sep=""))
-write.csv(paired_blocked, paste(wd, "LargeCohort_PairedSubset_89Samples_Blocked.csv", sep=""))
+write.csv(paired_unblocked, paste(wd, "LargeCohort_PairedSubset_75Samples_Unblocked.csv", sep=""))
+write.csv(paired_blocked, paste(wd, "LargeCohort_PairedSubset_75Samples_Blocked.csv", sep=""))
 ```
 
