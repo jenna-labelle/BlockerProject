@@ -481,3 +481,45 @@ p<-CPMPlot(CPMLog, "Mean")+
 
 
 ```
+
+#Supplementary analysis: does the level of efficacy of miR-486 blockers correlate with the abundance of miR-486 in the unblocked libraries?
+We expect blocking to be competitive, and thus for efficacy to decrease as abundance in unblocked samples increase
+```{r}
+#Subset to blocked and unblocked
+blocked<-t(counts_OutliersRemoved[rownames(counts_OutliersRemoved)=="hsa-miR-486",grep("Blocked", colnames(counts_OutliersRemoved))])
+unblocked<-t(counts_OutliersRemoved[rownames(counts_OutliersRemoved)=="hsa-miR-486",grep("Unblocked", colnames(counts_OutliersRemoved))])
+
+#Rename based on phenoID
+blocked<-blocked[,order(colnames(blocked))]
+unblocked<-unblocked[,order(colnames(unblocked))]
+
+blocked_pheno<- merge(blocked, pairedSamples_OutliersRemoved, by=0)
+unblocked_pheno<- merge(unblocked, pairedSamples_OutliersRemoved, by=0)
+
+#Sort by pheno ID
+blocked_pheno<- blocked_pheno[order(blocked_pheno$phenoId),]
+unblocked_pheno<- unblocked_pheno[order(unblocked_pheno$phenoId),]
+
+#Add column to blocked: percent reduction 
+blocked_pheno$Reduction<-(unblocked_pheno$x - blocked_pheno$x)/unblocked_pheno$x
+
+#Combine for plotting
+df<-data.frame(Abundance=unblocked_pheno$x, ReducedBy=blocked_pheno$Reduction)
+
+#Regression
+fit <- lm(Abundance ~ ReducedBy, data = df)
+
+#Plot
+p<-ggplot(df, aes(x=Abundance, y=ReducedBy))+
+        geom_point(stat="identity", position="dodge")+
+        geom_smooth(method="lm",col="red",se=F)+
+        labs(title = paste("Adj R2 = ",signif(summary(fit)$adj.r.squared, 5),
+                     "Intercept =",signif(fit$coef[[1]],5 ),
+                     " Slope =",signif(fit$coef[[2]], 5),
+                     " P =",signif(summary(fit)$coef[2,4], 5)))
+
+
+
+
+```
+
